@@ -1,0 +1,17 @@
+<launch>
+        <!-- This will be replaced by the  -->
+        <arg name="robot_ip" default="10.0.0.1" />
+        <!-- This starts the driver that allow the computer to communicate with the robot. --> -->
+	<include file="$(find ur_modern_driver)/launch/ur10_ros_control.launch">
+		<arg name="robot_ip" value="$(arg robot_ip)"/>		
+	</include>
+
+
+	<!-- Visualization -->
+	<arg name="my_rviz" value="-d $(find cartesian_controller_examples)/etc/examples.rviz" />
+	<node name="rviz" pkg="rviz" type="rviz" respawn="false" args="$(arg my_rviz)" output="screen" >
+	</node>
+
+</launch>
+
+
