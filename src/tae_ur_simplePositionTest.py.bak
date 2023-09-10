@@ -1,0 +1,187 @@
+#!/usr/bin/env python
+
+import os, sys
+import rospy
+from moveGroupInterface_Tae import MoveGroupInterface
+from scipy.io import savemat
+from datetime import datetime
+import pandas as pd
+import re
+import subprocess
+import numpy as np
+
+
+from tae_psoc.msg import cmdToPsoc
+from edg_data_logger.srv import *
+from std_msgs.msg import String
+
+def checkForceOutput():
+    # First Check all CSV files in /tmp/ and bring them in as a variable  
+  fileList = []
+  for file in os.listdir("/tmp"):    
+    if file.endswith(".csv") and file.find("netft"):
+        fileList.append(os.path.join("/tmp", file))
+        
+  thisFT_CSV = sorted(fileList)[-1]
+  df=pd.read_csv(thisFT_CSV)
+  dataArray = df.values
+
+  xDiffer = np.amax(dataArray[:,1]) - np.amin(dataArray[:,1])
+  yDiffer = np.amax(dataArray[:,2]) - np.amin(dataArray[:,2])
+  zDiffer = np.amax(dataArray[:,3]) - np.amin(dataArray[:,3])
+
+  print "Force Diff in x, y, z"
+  print xDiffer
+  print yDiffer
+  print zDiffer
+
+
+def saveDataParams():
+  global theta
+  
+
+  rad2deg = 180.0 / np.pi
+
+  ResultSavingDirectory = os.path.expanduser('~') + '/TaeExperiment/' + datetime.now().strftime("%y%m%d")
+  if not os.path.exists(ResultSavingDirectory):
+    os.makedirs(ResultSavingDirectory)
+
+  #check if CSV Files are available
+  tmp_dummyFolder = '/tmp/processed_csv'
+  if not os.path.exists(tmp_dummyFolder):
+    os.makedirs(tmp_dummyFolder)
+   
+  # First Check all CSV files in /tmp/ and bring them in as a variable  
+  fileList = []
+  for file in os.listdir("/tmp"):
+      if file.endswith(".csv"):
+          fileList.append(os.path.join("/tmp", file))
+
+  savingDictionary = {}
+  errorCount = 0
+  for fileName in fileList:  
+    try:    
+      df=pd.read_csv(fileName)             
+                          
+      thisColumnName = df.columns.tolist()
+      
+      splitedList = re.split('_|\.', fileName)        
+      thisTopicName = ''.join(splitedList[4:-1])        
+      
+      savingDictionary[thisTopicName+"_columnName"] = thisColumnName
+      savingDictionary[thisTopicName+"_data"] = df.values
+      #move to temparary folder    
+      os.rename(fileName, tmp_dummyFolder + '/' + re.split('/',fileName)[-1])
+    except Exception as e:
+      print e
+      errorCount +=1
+
+      # try:
+      #     df=pd.read_csv(fileName)             
+                              
+      #     thisColumnName = df.columns.tolist()
+          
+      #     splitedList = re.split('_|\.', fileName)        
+      #     thisTopicName = ''.join(splitedList[4:-1])        
+          
+      #     savingDictionary[thisTopicName+"_columnName"] = thisColumnName
+      #     savingDictionary[thisTopicName+"_data"] = df.values
+      # except Exception as e:
+      #     print(fileName + ": "+ str(e))
+      #     pass
+      # #move to temparary folder    
+      # os.rename(fileName, tmp_dummyFolder + '/' + re.split('/',fileName)[-1])
+  # if errorCount > 1:
+  #   raise Exception("!!!!!!!!!!!!!!!!!!---DataLoggerError---!!!!")
+  
+
+  savingFileName_noDir = 'DataLog_'+ '_'.join(splitedList[1:4])
+  savingFileName = ResultSavingDirectory + '/' + savingFileName_noDir + '_SimpleTest'
+  savemat(savingFileName, savingDictionary)
+
+  return ResultSavingDirectory, savingFileName_noDir
+
+
+
+# Clear all csv files in the tmp folder
+def clearTmpFolder():
+  fileList = []
+  for file in os.listdir("/tmp"):
+      if file.endswith(".csv"):
+          fileList.append(os.path.join("/tmp", file))
+  
+  for fileName in fileList:
+    os.remove(fileName)
+
+
+
+
+    
+
+
+def main():
+  try:
+    print "Position Test"
+    rospy.init_node('tae_ur_run')
+    
+    savingDataFlag = True
+
+    if savingDataFlag:
+      print "Wait for the data_logger"
+      rospy.wait_for_service('data_logging')
+      dataLoggerEnable = rospy.ServiceProxy('data_logging', Enable)
+
+      dataLoggerEnable(False) # reset Data Logger just in case
+      rospy.sleep(1)
+      clearTmpFolder()
+      rospy.sleep(1)
+      dataLoggerEnable(True) # Start Data Logging
+
+ 
+    
+    print ""
+    print "----------------------------------------------------------"
+    print "Welcome to the MoveIt MoveGroup Python Interface UR_Interface"
+    print "----------------------------------------------------------"
+    print "Press Ctrl-D to exit at any time"
+    print ""
+    # print "============ Begin the tutorial by setting up the moveit_commander ..."    
+    # UR_Interface = MoveGroupInterface()
+    
+    # engagePosition_Z0 = [-0.80, .15, 0.30]# When depth is 0 cm. unit is in m
+    # UR_Interface.engaging_endEffector_Position = engagePosition_Z0
+
+
+    # print "== Go to Disengage ====="
+
+    # print UR_Interface.go_to_disengagePose_simple()
+
+    # print "============ Press `Enter` to execute a Engage Pose"
+    # raw_input()
+    
+    
+    # if not UR_Interface.go_to_engagePose():
+    #       UR_Interface.go_to_engagePose()
+
+
+    print "============ Press `Enter` to execute DisengagePose"
+    raw_input()
+    # print UR_Interface.go_to_disengagePose_simple()
+    
+    if savingDataFlag:
+      print(dataLoggerEnable(False)) # Stop Data Logging
+      rospy.sleep(1)
+      checkForceOutput();
+      savingFolder, savingFileName = saveDataParams()
+      import checkSavedMatFile
+
+    print "============ Python UR_Interface demo complete!"
+  except rospy.ROSInterruptException:
+    return
+  except KeyboardInterrupt:
+    return
+
+if __name__ == '__main__':  
+  main()
+
+
