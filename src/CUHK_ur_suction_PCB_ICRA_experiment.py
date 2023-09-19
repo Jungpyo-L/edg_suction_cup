@@ -354,6 +354,6 @@ if __name__ == '__main__':
   parser.add_argument('--height_comp', type=float, help='height compensate factor for scale', default=0.035)
   parser.add_argument('--mode', type=str, help='mode of haptic search', default='HS')
   parser.add_argument('--PCB', type=int, help='label of test PCB from 0 to 1', default=0)
-  parser.add_argument('--level', type=int, help='label of PCB categories', default=1)
+  parser.add_argument('--level', type=int, help='label of PCB categories', default=3)
   args = parser.parse_args()    
   main(args)

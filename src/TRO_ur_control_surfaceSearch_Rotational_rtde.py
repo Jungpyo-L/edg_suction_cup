@@ -75,7 +75,8 @@ from helperFunction.gqcnn_policy_class import GraspProcessor
 
 def main(args):
   #========================== User Input================================================
-  engagePosition =  [-576e-3, 198e-3, 35e-3]
+  # engagePosition =  [-586e-3, 198e-3, 35e-3 - 004e-3]
+  engagePosition =  [-584e-3 - 001e-3, 200e-3, 35e-3 - 004e-3]
   disengagePosition = engagePosition
   disengagePosition[2] += 10e-3
   # disengagePosition[2] += 100e-3
@@ -91,6 +92,7 @@ def main(args):
   # F_normalThres = [1.5, 2.0]
   F_normalThres = 1.5 #1
   Fz_tolerance = 0.1
+  args.domeRadius = 9999
   #================================================================================================
   
   # CONSTANTS
@@ -101,9 +103,9 @@ def main(args):
   timeLimit = 15.0 # time limit 10 sec      
   dispLimit = 30e-3 # displacement limit = 25e-3
   angleLimit = np.pi / 4 # angle limit 45deg
-  args.timeLimit = timeLimit
-  args.dispLimit = dispLimit
-  args.angleLimit = angleLimit
+  # args.timeLimit = timeLimit
+  # args.dispLimit = dispLimit
+  # args.angleLimit = angleLimit
 
   deg2rad = np.pi / 180.0
   DUTYCYCLE_100 = 100
@@ -144,9 +146,24 @@ def main(args):
   rospy.sleep(1.0)
   file_help.clearTmpFolder()        # clear the temporary folder
 
-  # pose initialization
-  setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
+  setOrientation = tf.transformations.quaternion_from_euler(pi,0,-pi/2 -pi,'sxyz') #static (s) rotating (r)
   disEngagePose = rtde_help.getPoseObj(disengagePosition, setOrientation)
+  rospy.sleep(3)
+  rtde_help.goToPose(disEngagePose)
+
+  for i in range(0):
+    tipContactPose = rtde_help.getCurrentPose()
+    phi = pi/4 * 2.1
+    omega_hat = hat(np.array([0, 0, -1]))
+    Rw = scipy.linalg.expm(phi * omega_hat)
+    T_from_tipContact = create_transform_matrix(Rw, [0.0, 0, 0])
+    targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_from_tipContact, tipContactPose)
+    rtde_help.goToPose(targetPose)
+    rospy.sleep(1)
+
+
+  # pose initialization
+  
 
   try:
 
@@ -173,7 +190,7 @@ def main(args):
         print("set now as offset failed, but it's okay")
 
     # start data logger
-    dataLoggerEnable(True) # start data logging
+    # dataLoggerEnable(True) # start data logging
 
     # initialize variables for fz control to find tipContactPose
     print("move along normal")
@@ -182,6 +199,9 @@ def main(args):
     farFlag = True
     inRangeCounter = 0
     F_normal = FT_help.averageFz_noOffset
+
+    # test data logger here
+    dataLoggerEnable(True)
 
     while inRangeCounter < 100:
       if F_normal > -(F_normalThres-Fz_tolerance):
@@ -213,28 +233,41 @@ def main(args):
     
     rtde_help.stopAtCurrPoseAdaptive()
     rospy.sleep(0.5)
+    
+    # END TEST OF DATA LOGGER HERE
+    dataLoggerEnable(False)
+    rospy.sleep(0.2)
+    P_help.stopSampling()
 
     # initialize the point to sweep theta about
     tipContactPose = rtde_help.getCurrentPose()
     tipContactPose.pose.position.z -= 3e-3
 
     phi = 0
-    phiMax = np.pi / 2
-    phiList = np.linspace(0,phiMax,11)
+    phiMax = np.pi * 2
+    phiList = np.linspace(0,phiMax,36*2+1)
+    phiList = np.array(range(0, 361, 5)) /180*np.pi
+    # phiList = np.array([0, pi/6])
 
     # steps = 50
-    steps = 30
-    thetaMax = steps*np.pi/180
-    thetaList = np.linspace(0,thetaMax,int(steps+1))
-    # thetaList = np.linspace( 0,thetaMax,int(steps/3+1) )
-    # thetaList = np.concatenate((np.flip(thetaList), -thetaList))
-    thetaList = np.flip(thetaList)
+    # steps = 30
+    # thetaMax = steps*np.pi/180
+    # thetaList = np.linspace(0,thetaMax,int(steps+1))
+    # # thetaList = np.linspace( 0,thetaMax,int(steps/3+1) )
+    # # thetaList = np.concatenate((np.flip(thetaList), -thetaList))
+    # thetaList = np.flip(thetaList)
 
     # go to starting theta pose
-    thetaIdx=0
-    theta = thetaList[thetaIdx]
-    omega_hat = hat(np.array([np.cos(phi), np.sin(phi), 0]))
-    Rw = scipy.linalg.expm(theta * omega_hat)
+    thetaIdx = 0
+    theta = 20 * pi/180
+    omega_hat1 = hat(np.array([1, 0, 0]))
+    Rw1 = scipy.linalg.expm(theta * omega_hat1)
+
+    phi = 0 * pi/180
+    omega_hat2 = hat(np.array([0, 0, 1]))
+    Rw2 = scipy.linalg.expm(phi * omega_hat2)
+
+    Rw = np.dot(Rw1, Rw2)
 
     # L = 20e-3
     L = 8e-3
@@ -252,35 +285,68 @@ def main(args):
     rospy.sleep(0.5)
 
     input("start sweeping theta")
-    targetPWM_Pub.publish(DUTYCYCLE_100)
+    targetPWM_Pub.publish(DUTYCYCLE_30)
 
     # sweep the rotation offsets
     thisThetaNeverVisited = True
     P_vac = P_help.P_vac
     P_curr = np.mean(P_help.four_pressure)
 
-    while thetaIdx < len(thetaList):
+    while thetaIdx < len(phiList):
     # while thetaIdx < len(thetaList) and P_curr > P_vac:
       if thisThetaNeverVisited:
-        theta = thetaList[thetaIdx]
-        omega_hat = hat(np.array([np.cos(phi), np.sin(phi), 0]))
-        Rw = scipy.linalg.expm(theta * omega_hat)
-        # T_from_tipContact = create_transform_matrix(Rw, [0.0, 0.0, 0.0])
+
+        
+        P_help.startSampling()
+        rospy.sleep(0.5)
+        dataLoggerEnable(True) # start data logging
+        
+
+        # CONDITIONS
+        phi = phiList[thetaIdx]
+        # phi = 45
+        theta = 20 * pi/180
+        omega_hat1 = hat(np.array([1, 0, 0]))
+        Rw1 = scipy.linalg.expm(theta * omega_hat1)
+
+        omega_hat2 = hat(np.array([0, 0, 1]))
+        Rw2 = scipy.linalg.expm(phi * omega_hat2)
+
+        Rw = np.dot(Rw1, Rw2)
+        # Rw = Rw1
+
         cx = L*np.sin(theta)
         cz = -L*np.cos(theta)
+
+        # FIRST GO TO A HORIZONTAL POSITION
+        T_from_tipContact = create_transform_matrix(Rw2, [0.0, cx, cz - 010e-3])
+        targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_from_tipContact, tipContactPose)
+        rtde_help.goToPose(targetPose)
+
+        rospy.sleep(.1)
+        targetPWM_Pub.publish(DUTYCYCLE_100)
+        rospy.sleep(1.5)
+        targetPWM_Pub.publish(DUTYCYCLE_30)
+
         T_from_tipContact = create_transform_matrix(Rw, [0.0, cx, cz])
         targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_from_tipContact, tipContactPose)
         rtde_help.goToPose(targetPose)
         thisThetaNeverVisited = False
         inRangeCounter = 0
+
+        # P_help.startSampling()
+        # rospy.sleep(0.5)
+        # dataLoggerEnable(True) # start data logging
       
 
-      i = 2
-      targetOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2+pi/36*i,'sxyz') #static (s) rotating (r)
-      targetOrientation = tf.transformations.quaternion_from_euler(pi,theta /180*pi,pi/2+pi/36*i,'sxyz') #static (s) rotating (r)
-      targetPose = rtde_help.getPoseObj(disengagePosition, targetOrientation)
-      rtde_help.goToPose(targetPose)
-      rospy.sleep(0.1)
+      # targetOrientation = tf.transformations.quaternion_from_euler(pi,10*pi/180,pi/2+pi/36*i,'sxyz') #static (s) rotating (r)
+      # targetOrientation = tf.transformations.quaternion_from_euler(pi,theta /180*pi,pi/2+pi/36*i,'sxyz') #static (s) rotating (r)
+      # targetOrientation = tf.transformations.quaternion_from_euler(pi + 30 *pi/180, 0, (90+20) *pi/180,'rxyz') #static (s) rotating (r)
+      # targetPose = rtde_help.getPoseObj(disengagePosition, targetOrientation)
+      # rtde_help.goToPose(targetPose)
+      # rospy.sleep(0.1)
+
+      
 
       P_curr = np.mean(P_help.four_pressure)
       F_normal = FT_help.averageFz_noOffset
@@ -313,83 +379,33 @@ def main(args):
       # if closeEnough and np.abs(dF)<Fz_tolerance:
       if closeEnough and inRangeCounter > 100:
       # if np.abs(dF)<Fz_tolerance:
+
         rtde_help.stopAtCurrPoseAdaptive()
         print("Theta:", theta, "reached with Fz", F_normal)
         targetPWM_Pub.publish(DUTYCYCLE_100) # Just to mark in the data collection.
         thetaIdx+=1
         thisThetaNeverVisited = True
-        rospy.sleep(4)
-        print("4 seconds passed")
-        # rospy.sleep(0.5)
+        rospy.sleep(2)
+        print("2 seconds passed")
+        targetPWM_Pub.publish(DUTYCYCLE_30) # Just to mark in the data collection.
+
+        rospy.sleep(0.2)
+        dataLoggerEnable(False) # Stop data logging
+        rospy.sleep(0.2)  
+
+        args.Fz_set = F_normalThres
+        args.theta = int(round(theta *180/pi))
+        args.phi = int(round(phi *180/pi))
+        file_help.saveDataParams(args, appendTxt='seb_rotational_'+'domeRadius_' + str(args.domeRadius) + 'mm_gamma_' + str(args.theta) + '_phi_' + str(args.phi))
+        file_help.clearTmpFolder()
+        P_help.stopSampling()
+        rospy.sleep(0.1)
       
       print("target theta: ", theta)
       print("P_curr: ", P_curr)
       print("dF: ", dF)
       print("np.abs(dF)<Fz_tolerance: ", np.abs(dF)<Fz_tolerance)
       print("checkGoalPoseReached: ", closeEnough)
-
-    ###########################
-    # # start data logger
-    # dataLoggerEnable(True) # start data logging
-
-    # set up flags for adaptive motion
-    PFlag = False
-    startTime = time.time()
-    alternateTime = time.time()
-    prevTime = 0
-
-    for i in range(0):
-      print(i)
-      # for alternating controller
-      if time.time() - alternateTime > 0.5:
-        alternateTime = time.time()
-        if PFlag:
-          PFlag = False
-        else:
-          PFlag = True
-      
-      # PFT arrays to calculate Transformation matrices
-      P_array = P_help.four_pressure
-      T_array = [FT_help.averageTx_noOffset, FT_help.averageTy_noOffset]
-      F_array = [FT_help.averageFx_noOffset, FT_help.averageFy_noOffset]
-      F_normal = FT_help.averageFz_noOffset
-
-      # check force limits
-      Fx = F_array[0]
-      Fy = F_array[1]
-      Fz = F_normal
-      F_total = np.sqrt(Fx**2 + Fy**2 + Fz**2)
-
-      if F_total > 10:
-        print("net force acting on cup is too high")
-
-        # stop at the last pose
-        rtde_help.stopAtCurrPose()
-        rospy.sleep(0.1)
-        targetPWM_Pub.publish(DUTYCYCLE_0)
-        break
-
-      # get FT and quat for FT control
-      (trans, quat) = rtde_help.readCurrPositionQuat()
-      T_array_cup = adpt_help.get_T_array_cup(T_array, F_array, quat)
-
-      # calculate transformation matrices
-      # controller_str = 'FTR'
-      # T_align, T_later = adpt_help.get_Tmats_from_controller(P_array, T_array_cup, controller_str, PFlag)
-      
-      T_align, T_later = adpt_help.get_Tmats_Suction(weightVal=1.0)
-      # T_align, T_later = adpt_help.get_Tmats_freeRotation(a=0, b=1)
-
-      # T_normalMove = adpt_help.get_Tmat_axialMove(F_normal, F_normalThres)
-      T_normalMove = np.eye(4)
-      T_move =  T_later @ T_align @ T_normalMove # lateral --> align --> normal
-      # T_move =  T_align
-      # T_move = np.eye(4)
-
-      # move to new pose adaptively
-      measuredCurrPose = rtde_help.getCurrentPose()
-      currPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, measuredCurrPose)
-      rtde_help.goToPoseAdaptive(currPose)
 
     ###################################
 
@@ -401,33 +417,70 @@ def main(args):
     P_help.stopSampling()
     targetPWM_Pub.publish(DUTYCYCLE_0)
     rospy.sleep(0.5)
-    # rtde_help.goToPoseAdaptive(disEngagePose, time = 1.0)
+
+    rospy.sleep(0.1)
+    input("press enter to finish script")
+
+    setOrientation = tf.transformations.quaternion_from_euler(pi,0,-pi/2 -pi,'sxyz') #static (s) rotating (r)
+    disEngagePose = rtde_help.getPoseObj(disengagePosition, setOrientation)
+    rospy.sleep(3)
     rtde_help.goToPose(disEngagePose)
 
+    for i in range(2):
+      tipContactPose = rtde_help.getCurrentPose()
+      phi = pi/4 * 2.1
+      omega_hat = hat(np.array([0, 0, -1]))
+      Rw = scipy.linalg.expm(phi * omega_hat)
+      T_from_tipContact = create_transform_matrix(Rw, [0.0, 0, 0])
+      targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_from_tipContact, tipContactPose)
+      rtde_help.goToPose(targetPose)
+      rospy.sleep(1)
+
+    rtde_help.goToPose(disEngagePose)
+
+    rospy.sleep(3)
+    
+
     # save args
-    args.Fz_set = F_normalThres
-    args.thetaList = np.array(thetaList)
-    # file_help.saveDataParams(args, appendTxt='rotCharac')
-    file_help.saveDataParams(args, appendTxt='seb_rotational_'+'domeRadius_' + str(args.domeRadius) + '_gamma_' + str(args.gamma) + '_theta_' + str(args.theta))
-    # file_help.saveDataParams(args, appendTxt='jp_lateral_'+'xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta))
-    file_help.clearTmpFolder()
+    # args.Fz_set = F_normalThres
+    # args.thetaList = np.array(thetaList)
+    # # file_help.saveDataParams(args, appendTxt='rotCharac')
+    # file_help.saveDataParams(args, appendTxt='seb_rotational_'+'domeRadius_' + str(args.domeRadius) + '_gamma_' + str(args.gamma) + '_theta_' + str(args.theta))
+    # # file_help.saveDataParams(args, appendTxt='jp_lateral_'+'xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta))
+    # file_help.clearTmpFolder()
 
     print("============ Python UR_Interface demo complete!")
 
     
 
   except rospy.ROSInterruptException:
+    print('rospy.ROSInterruptException')
     return
   except KeyboardInterrupt:
+    print(KeyboardInterrupt)
+
+    phi = -pi
+    omega_hat = hat(np.array([0, 0, 1]))
+    Rw = scipy.linalg.expm(phi * omega_hat)
+    T_from_tipContact = create_transform_matrix(Rw, [0.0, cx, cz - 020e-3])
+    targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_from_tipContact, tipContactPose)
+    rtde_help.goToPose(targetPose)
+    rospy.sleep(.5)
+
+    setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
+    disEngagePose = rtde_help.getPoseObj(disengagePosition, setOrientation)
+
+    rtde_help.goToPose(disEngagePose)
+
     return
 
 
 if __name__ == '__main__':  
   import argparse
   parser = argparse.ArgumentParser()
-  parser.add_argument('--useStoredData', type=bool, help='take image or use existingFile', default=False)
-  parser.add_argument('--storedDataDirectory', type=str, help='location of target saved File', default="")
-  parser.add_argument('--attempIndex', type=int, help='startIndex Of pick attempt', default= 1)
+  # parser.add_argument('--useStoredData', type=bool, help='take image or use existingFile', default=False)
+  # parser.add_argument('--storedDataDirectory', type=str, help='location of target saved File', default="")
+  # parser.add_argument('--attempIndex', type=int, help='startIndex Of pick attempt', default= 1)
 
   args = parser.parse_args()    
   

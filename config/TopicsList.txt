@@ -2,3 +2,4 @@
 /SensorPacket
 /pwm
 /endEffectorPose
+/sync

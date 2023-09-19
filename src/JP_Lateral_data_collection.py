@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Authors: Sebastian D. Lee, Jungpyo Lee, and Tae Myung Huh
+# Authors: Jungpyo Lee
 
 # imports
 try:
@@ -27,40 +27,28 @@ import time
 import scipy
 import pickle
 import shutil
-from moveGroupInterface_Tae import MoveGroupInterface
 from scipy.io import savemat
 from scipy.spatial.transform import Rotation as sciRot
 
-import endeffectorOffset as eff_offsetCal
 
 from netft_utils.srv import *
-from tae_datalogger.srv import *
 from std_msgs.msg import String
 from std_msgs.msg import Int8
-from geometry_msgs.msg import WrenchStamped
-from geometry_msgs.msg import PoseStamped
 import geometry_msgs.msg
 import tf
 import cv2
 from scipy import signal
 
 from math import pi, cos, sin
-from controller_manager_msgs.msg import ControllerState
-from controller_manager_msgs.srv import *
-from controller_manager_msgs.utils\
-    import ControllerLister, ControllerManagerLister,\
-    get_rosparam_controller_names
 
-
-from dynamic_reconfigure.srv import *
-from dynamic_reconfigure.msg import Config
 
 from helperFunction.SuctionP_callback_helper import P_CallbackHelp
 from helperFunction.FT_callback_helper import FT_CallbackHelp
 from helperFunction.fileSaveHelper import fileSaveHelp
 from helperFunction.rtde_helper import rtdeHelp
 from helperFunction.adaptiveMotion import adaptMotionHelp
-from helperFunction.gqcnn_policy_class import GraspProcessor
+
+
 
 
 def main(args):
@@ -89,7 +77,6 @@ def main(args):
   adpt_help = adaptMotionHelp(dw = 0.5, d_lat = 0.5e-3, d_z = 0.1e-3)
 
   # Load Camera Transform matrix
-  
   rospy.sleep(0.5)
   rtde_help.setTCPoffset([0, 0, 0.150, 0, 0, 0])
   rospy.sleep(0.2)
