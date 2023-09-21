@@ -31,11 +31,9 @@ from scipy.io import savemat
 from scipy.spatial.transform import Rotation as sciRot
 
 import endeffectorOffset as eff_offsetCal
-from tae_psoc.msg import cmdToPsoc
-from tae_psoc.msg import SensorPacket
 
 from netft_utils.srv import *
-from tae_datalogger.srv import *
+from suction_cup.srv import *
 from std_msgs.msg import String
 from std_msgs.msg import Int8
 from geometry_msgs.msg import WrenchStamped

@@ -32,6 +32,7 @@ from scipy.spatial.transform import Rotation as sciRot
 
 
 from netft_utils.srv import *
+from suction_cup.srv import *
 from std_msgs.msg import String
 from std_msgs.msg import Int8
 import geometry_msgs.msg
@@ -49,14 +50,16 @@ from helperFunction.rtde_helper import rtdeHelp
 from helperFunction.adaptiveMotion import adaptMotionHelp
 
 
-
-
 def main(args):
 
   deg2rad = np.pi / 180.0
   DUTYCYCLE_100 = 100
   DUTYCYCLE_30 = 30
   DUTYCYCLE_0 = 0
+
+  SYNC_RESET = 0
+  SYNC_START = 1
+  SYNC_STOP = 2
 
   F_normalThres = [1.5, 2.0]
 
@@ -76,7 +79,7 @@ def main(args):
   file_help = fileSaveHelp()
   adpt_help = adaptMotionHelp(dw = 0.5, d_lat = 0.5e-3, d_z = 0.1e-3)
 
-  # Load Camera Transform matrix
+  # Set the TCP offset and calibration matrix
   rospy.sleep(0.5)
   rtde_help.setTCPoffset([0, 0, 0.150, 0, 0, 0])
   rospy.sleep(0.2)
@@ -93,6 +96,10 @@ def main(args):
   targetPWM_Pub = rospy.Publisher('pwm', Int8, queue_size=1)
   targetPWM_Pub.publish(DUTYCYCLE_0)
 
+  # Set the synchronization Publisher
+  syncPub = rospy.Publisher('sync', Int8, queue_size=1)
+  syncPub.publish(SYNC_RESET)
+
 
   print("Wait for the data_logger to be enabled")
   rospy.wait_for_service('data_logging')
@@ -104,139 +111,132 @@ def main(args):
   
   # pose initialization
   xoffset = args.xoffset
-  disengagePosition =  [-0.587 + args.xoffset, .220, 0.025+0.100] # When depth is 0 cm. unit is in m
+  disengagePosition_init =  [-0.597, .213, 0.025] # unit is in m
   setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
-  disEngagePose = rtde_help.getPoseObj(disengagePosition, setOrientation)
+  disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
 
 
   # try block so that we can have a keyboard exception
   try:
-    
     # Go to disengage Pose
     input("Press <Enter> to go disEngagePose")
     rtde_help.goToPose(disEngagePose)
     rospy.sleep(0.1)
 
-    P_help.startSampling()      
-    rospy.sleep(0.5)
-    FT_help.setNowAsBias()
-    P_help.setNowAsOffset()
-    Fz_offset = FT_help.averageFz
+    input("Press <Enter> to start to data collection")
+    for j in range(xoffset, 17):
 
+      print("Move to the upated disengage point")
+      # add offset to the disengage position
+      args.xoffset = j
+      # copy the initial disengage position without changing initial value
+      disengagePosition = copy.deepcopy(disengagePosition_init)
+      print("disengagePosition: ", disengagePosition)
+      disengagePosition[0] += j*0.001
+      print("disengagePosition: ", disengagePosition)
 
-    input("Press <Enter> to go normal to get engage point")
-    initEndEffPoseStamped = rtde_help.getCurrentPose()
-    
-    
-    print("move along normal")
-      #========================== Tae Change upto Here      
-    targetPose = rtde_help.getCurrentPose()
+      for i in range(round(args.angle/5)+1):
 
-    # flags and variables
-    
-    farFlag = True
-    
-    # slow approach until normal force is high enough
-    F_normal = FT_help.averageFz_noOffset
-    targetPWM_Pub.publish(DUTYCYCLE_0)
-
-    while farFlag:
-        if F_normal > -F_normalThres[0]:
-          T_move = adpt_help.get_Tmat_TranlateInZ(direction = 1)
-          targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPose)
-          rtde_help.goToPoseAdaptive(targetPose, time = 0.1)
-
-          # new normal force
-          F_normal = FT_help.averageFz_noOffset
-
-        elif F_normal < -F_normalThres[1]:
-          T_move = adpt_help.get_Tmat_TranlateInZ(direction = -1)
-          targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPose)
-          rtde_help.goToPoseAdaptive(targetPose, time = 0.1)
-          
-          # new normal force
-          F_normal = FT_help.averageFz_noOffset
-
-        else:
-          farFlag = False
-          rtde_help.stopAtCurrPoseAdaptive()
-          print("reached threshhold normal force: ", F_normal)
-          rospy.sleep(0.1)
-    
-    targetPoseEngaged = rtde_help.getCurrentPose()
-    T_N_Engaged = adpt_help.get_Tmat_from_Pose(targetPoseEngaged)
-    engage_z = targetPoseEngaged.pose.position.z
-    rtde_help.goToPose(disEngagePose)
-    rospy.sleep(0.1)
-    
-    input("Press <Enter> to start data collection")
-    
-    for j in range(1): #range(25):
-      args.xoffset = j*0.001
-      disengagePosition =  [-0.587 + args.xoffset, .220, 0.025+0.1]
-      engagePosition = [-0.587 + args.xoffset, .220, engage_z]
-      # for i in range(round(args.angle/5)+1):
-      for i in range(2): 
-        print("offset: ", args.xoffset)
+        print("offset: ", j)
         print("Pose Idx: ", i)
         args.theta = round((pi/36*i)*180/pi)
         print("Theta =", args.theta)
 
         if args.startAngle > args.theta:
           continue
-
-        targetOrientation = tf.transformations.quaternion_from_euler(pi,45*pi/180,pi/2+pi/36*i,'sxyz') #static (s) rotating (r)
+        
+        # add yaw angle to the disengage position
+        targetOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2+pi/36*i,'sxyz') #static (s) rotating (r)
         targetPose = rtde_help.getPoseObj(disengagePosition, targetOrientation)
         rtde_help.goToPose(targetPose)
-        rospy.sleep(0.1)
-        
-        targetOrientation = tf.transformations.quaternion_from_euler(pi,45*pi/180,pi/2+pi/36*i,'sxyz') #static (s) rotating (r)
-        targetPose = rtde_help.getPoseObj(engagePosition, targetOrientation)
-        rtde_help.goToPose(targetPose)
-        rospy.sleep(0.1)
-        
-        P_help.startSampling()
-        rospy.sleep(0.5)
-        dataLoggerEnable(True) # start data logging
-
-        # input("Press <Enter> to move along normal")
-        
-        # collect the init 
         targetPWM_Pub.publish(DUTYCYCLE_100)
-        rospy.sleep(3)
+        syncPub.publish(SYNC_RESET)
+        rospy.sleep(0.1)
+
+        # set pressure and FT offset
+        P_help.startSampling()      
+        rospy.sleep(0.5)
+        FT_help.setNowAsBias()
+        P_help.setNowAsOffset()
+        Fz_offset = FT_help.averageFz
+
+        # start data logging
+        dataLoggerEnable(True)
+        rospy.sleep(0.5)
+
+        print("move along normal")
+        # flags and variables
+        farFlag = True
+        
+        # slow approach until normal force is high enough
+        F_normal = FT_help.averageFz_noOffset
+
+        while farFlag:
+            if F_normal > -F_normalThres[0]:
+              T_move = adpt_help.get_Tmat_TranlateInZ(direction = 1)
+              targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPose)
+              rtde_help.goToPoseAdaptive(targetPose, time = 0.01)
+              # rtde_help.goToPose(targetPose)
+
+              # new normal force
+              F_normal = FT_help.averageFz_noOffset
+
+            elif F_normal < -F_normalThres[1]:
+              T_move = adpt_help.get_Tmat_TranlateInZ(direction = -1)
+              targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPose)
+              rtde_help.goToPoseAdaptive(targetPose, time = 0.01)
+              # rtde_help.goToPose(targetPose)
+              
+              # new normal force
+              F_normal = FT_help.averageFz_noOffset
+
+            else:
+              farFlag = False
+              rtde_help.stopAtCurrPoseAdaptive()
+              print("reached threshhold normal force: ", F_normal)
+              rospy.sleep(0.1)
+
+        print("Start to record data")
+        syncPub.publish(SYNC_START)
+        rospy.sleep(2)
         P_init = P_help.four_pressure
         P_vac = P_help.P_vac
         if all(np.array(P_init)<P_vac) and i == 0:
           print("Suction Engage Succeed from initial touch")
-          targetPWM_Pub.publish(DUTYCYCLE_0)
           SuctionFlag = True
         else:
           SuctionFlag = False
+        print("Stop to record data")
+        syncPub.publish(SYNC_STOP)
+        rospy.sleep(0.1)
         targetPWM_Pub.publish(DUTYCYCLE_0)
+        rtde_help.goToPose(targetPose)
 
+        # stop data logging
         rospy.sleep(0.2)
-        dataLoggerEnable(False) # Stop data logging
+        dataLoggerEnable(False)
         rospy.sleep(0.2)    
 
+        # save data and clear the temporary folder
         file_help.saveDataParams(args, appendTxt='jp_lateral_'+'xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta))
         file_help.clearTmpFolder()
         P_help.stopSampling()
         rospy.sleep(0.5)
         if SuctionFlag == True:
           break
-      
-      # if SuctionFlag == False:
-      #   for i in range(4):
-      #     targetOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2-pi/2*(i+1),'sxyz') #static (s) rotating (r)
-      #     targetPose = rtde_help.getPoseObj(disengagePosition, targetOrientation)
-      #     rtde_help.goToPose(targetPose)
-      #     rospy.sleep(0.1)      
+
+      # in order to go back to the initial orientation
+      if SuctionFlag == False:
+        for i in range(4):
+          targetOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2-pi/2*(i+1),'sxyz') #static (s) rotating (r)
+          targetPose = rtde_help.getPoseObj(disengagePosition, targetOrientation)
+          rtde_help.goToPose(targetPose)
+          rospy.sleep(0.1)      
     
 
     print("Go to disengage point")
-    disengagePosition =  [-0.587, .220, 0.025+0.1] # When depth is 0 cm. unit is in m
     setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
-    disEngagePose = rtde_help.getPoseObj(disengagePosition, setOrientation)
+    disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
     rtde_help.goToPose(disEngagePose)
     # cartesian_help.goToPose(disEngagePose,wait=True)
     rospy.sleep(0.3)
@@ -269,6 +269,7 @@ if __name__ == '__main__':
   parser.add_argument('--xoffset', type=float, help='x direction offset', default= 0)
   parser.add_argument('--angle', type=int, help='angles of exploration', default= 360)
   parser.add_argument('--startAngle', type=int, help='angles of exploration', default= 0)
+  parser.add_argument('--primitives', type=str, help='types of primitives (edge, corner, etc.)', default= "edge")
 
   args = parser.parse_args()    
   

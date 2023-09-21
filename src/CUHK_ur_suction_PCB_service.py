@@ -29,7 +29,6 @@ from scipy.io import savemat
 from scipy.spatial.transform import Rotation as sciRot
 
 from netft_utils.srv import *
-from tae_datalogger.srv import *
 from suction_cup.srv import *
 
 

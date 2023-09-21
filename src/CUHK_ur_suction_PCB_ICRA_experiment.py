@@ -40,7 +40,6 @@ from geometry_msgs.msg import PoseStamped
 import geometry_msgs.msg
 
 from netft_utils.srv import *
-from tae_datalogger.srv import *
 from suction_cup.srv import *
 
 from helperFunction.SuctionP_callback_helper import P_CallbackHelp
@@ -155,6 +154,8 @@ def main(args):
   disEngagePose = rtde_help.getPoseObj(disengagePosition, setOrientation)
   scale_offset = disengagePosition[2]-initEndEffectorPose.position.z
   scale_Final = scale_Factor + scale_offset - args.height_comp # height compensating factor
+
+  # Set the TCP offset and calibration matrix (+0.035 is the height of the suspension for safety boundary)
 
   rtde_help.setTCPoffset([0, 0, 0.150+0.035, 0, 0, 0])
   rtde_help.setCalibrationMatrix()

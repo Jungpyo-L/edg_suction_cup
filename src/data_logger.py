@@ -148,11 +148,11 @@ def writeFileHeader(topic):
 def callback(data, args):
     global listOfAttributesInTopic
 
-    print(listOfAttributesInTopic)
+    # print(listOfAttributesInTopic)
     #Assume that the first argument represents the name of the type of the message
     topic = args[0]
     msg_name = args[1]
-    print(args)
+    # print(args)
 
     #Retrieve the class associated with that message name
     msg_class = get_message_class(msg_name)

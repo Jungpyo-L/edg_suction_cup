@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 
 # Authors: Jungpyo Lee
+# this is the code for experiments for ICRA 2024
+# to get the result of jumping haptic search for PCB level 2, 3
 
 # imports
 try:
@@ -86,7 +88,7 @@ def main(args):
 
   AxisAngleThres = np.pi/4.0
   disToPrevThres = 20e-3
-  timeLimit = 15.0 # searching time limit  
+  timeLimit = 10.0 # searching time limit  
   dispLimit = 50e-3 # displacement limit
   args.timeLimit = timeLimit
   args.dispLimit = dispLimit
@@ -147,12 +149,13 @@ def main(args):
   camera_intr = getRealSenseIntr()
 
   # pose initialization
-  disengagePosition =  [-690e-3, 85e-3, 420e-3]
+  disengagePosition =  [-690e-3+70e-3, 85e-3, 420e-3]
   setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz')
   disEngagePose = rtde_help.getPoseObj(disengagePosition, setOrientation)
   scale_offset = disengagePosition[2]-initEndEffectorPose.position.z
   scale_Final = scale_Factor + scale_offset - args.height_comp # height compensating factor
 
+  # Set the TCP offset and calibration matrix (+0.035 is the height of the suspension for safety boundary)
   rtde_help.setTCPoffset([0, 0, 0.150, 0, 0, 0])
   rtde_help.setCalibrationMatrix()
   # print("calibration matrix", rtde_help.transformation)
@@ -179,16 +182,15 @@ def main(args):
     rospy.sleep(0.1)
   except:
     print("set now as offset failed, but it's okay")
+    
 
-  
   try:
     while True:
       args.timeOverFlag = False
       args.dispOverFlag = False
       args.forceLimitFlag = False
-      print("input the name of PCB (1-8) when it is ready")
-      x = input()
-      args.PCB = str(x)
+      input("Press <Enter> to start PCB haptic search")
+      args.PCB += 1
 
       # input("Press <Enter> to go disEngagePose")
       print("Start to go to disEngagePose")
@@ -216,8 +218,8 @@ def main(args):
       dataLoggerEnable(True) # start data logging
       suctionSuccessFlag = False
 
-      # input("Press <Enter> to approach to targetPose")
-      print("Start to approach to target Pose")
+      input("Press <Enter> to approach to targetPose")
+      # print("Start to approach to target Pose")
       T_offset = adpt_help.get_Tmat_TranlateInBodyF([0., 0., -15e-3]) # small offset from the target pose
       targetSearchPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_offset, targetPoseStamped)
       rtde_help.goToPose(targetSearchPoseStamped)
@@ -231,91 +233,196 @@ def main(args):
       startTime = time.time()
       alternateTime = time.time()
       prevTime = 0
+      iteration = 0
 
       # get initial pose to check limits
       T_N_Engaged = adpt_help.get_Tmat_from_Pose(targetPoseStamped) # relative angle limit
       T_Engaged_N = np.linalg.inv(T_N_Engaged)
-      
-      while not suctionSuccessFlag:
+
+      if args.sliding == True:
         # 1. down to target pose
         rtde_help.goToPose(targetPoseStamped, speed=args.speed, acc=args.acc)
+        iteration += 1
         rospy.sleep(args.waitTime)
-
-        # calculate axis angle
-        measuredCurrPose = rtde_help.getCurrentPose()
-        T_N_curr = adpt_help.get_Tmat_from_Pose(measuredCurrPose)          
-        T_Engaged_curr = T_Engaged_N @ T_N_curr
-
-        # calculate current pos/angle
-        displacement = np.linalg.norm(T_Engaged_curr[0:3,3])
-
-        # 2. get sensor data
-        # PFT arrays to calculate Transformation matrices
-        P_array = P_help.four_pressure
-        T_array = [FT_help.averageTx_noOffset, FT_help.averageTy_noOffset]
-        F_array = [FT_help.averageFx_noOffset, FT_help.averageFy_noOffset]
-        F_normal = FT_help.averageFz_noOffset
-
-        # check force limits
-        Fx = F_array[0]
-        Fy = F_array[1]
-        Fz = F_normal
-        F_total = np.sqrt(Fx**2 + Fy**2 + Fz**2)
-
-        if F_total > 12:
-          print("net force acting on cup is too high")
-          args.forceLimitFlag = True
-          # stop at the last pose
-          rtde_help.stopAtCurrPose()
-          rospy.sleep(0.1)
-          break
         
-        # 3. lift up and check suction success
-        targetSearchPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_offset, targetPoseStamped)
-        rtde_help.goToPose(targetSearchPoseStamped, speed=args.speed, acc=args.acc)
-        
-        # P_vac = P_help.P_vac
-        P_vac = -2500.0
-        if int(args.PCB) == 7:
-          P_vac = -1500.0
-        elif int(args.PCB) == 8:
-          P_vac = -1000.0        
-        P_array_check = P_help.four_pressure
-        reached_vacuum = all(np.array(P_array_check)<P_vac)
+        while not suctionSuccessFlag:   # while no success in grasp, run controller until success or timeout
+          
+          # for alternating controller
+          if time.time() - alternateTime > 0.5:
+            alternateTime = time.time()
+            if PFlag:
+              PFlag = False
+            else:
+              PFlag = True
+          
+          # PFT arrays to calculate Transformation matrices
+          P_array = P_help.four_pressure
+          T_array = [FT_help.averageTx_noOffset, FT_help.averageTy_noOffset]
+          F_array = [FT_help.averageFx_noOffset, FT_help.averageFy_noOffset]
+          F_normal = FT_help.averageFz_noOffset
 
-        if reached_vacuum:
-          # vacuum seal formed, success!
-          suctionSuccessFlag = True
-          print("Suction engage succeeded with controller")
+          # check force limits
+          Fx = F_array[0]
+          Fy = F_array[1]
+          Fz = F_normal
+          F_total = np.sqrt(Fx**2 + Fy**2 + Fz**2)
 
-          # stop at the last pose
-          rtde_help.stopAtCurrPoseAdaptive()
-          args.elapedTime = time.time()-startTime
-          break
+          if F_total > 15:
+            print("net force acting on cup is too high")
 
-        elif time.time()-startTime > timeLimit or displacement > dispLimit:
-          args.timeOverFlag = time.time()-startTime >timeLimit
-          args.dispOverFlag = displacement > dispLimit
+            # stop at the last pose
+            rtde_help.stopAtCurrPose()
+            rospy.sleep(0.1)
+            sequentialFailures+=1
+            targetPWM_Pub.publish(DUTYCYCLE_0)
+            break
 
-          suctionSuccessFlag = False
-          print("Haptic search fail")
-          # stop at the last pose
-          rtde_help.stopAtCurrPoseAdaptive()
-          targetPWM_Pub.publish(DUTYCYCLE_0)
-          rospy.sleep(0.1)
-          break
+          # get FT and quat for FT control
+          (trans, quat) = rtde_help.readCurrPositionQuat()
+          T_array_cup = adpt_help.get_T_array_cup(T_array, F_array, quat)
 
-        # 4. move to above the next search location
-        T_later = adpt_help.get_Tmat_lateralMove(P_array)
-        targetPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_later, measuredCurrPose)
-        targetSearchPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_offset, targetPoseStamped)
-        rtde_help.goToPose(targetSearchPoseStamped, speed=args.speed, acc=args.acc)
+          # calculate transformation matrices
+          T_align, T_later = adpt_help.get_Tmats_from_controller(P_array, T_array_cup, 'W1', PFlag)
+          T_normalMove = adpt_help.get_Tmat_axialMove(F_normal, F_normalThres)
+          T_move =  T_later @ T_align @ T_normalMove # lateral --> align --> normal
+
+          # move to new pose adaptively
+          measuredCurrPose = rtde_help.getCurrentPose()
+          currPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, measuredCurrPose)
+          rtde_help.goToPoseAdaptive(currPose)
+
+          # calculate axis angle
+          T_N_curr = adpt_help.get_Tmat_from_Pose(measuredCurrPose)          
+          T_Engaged_curr = T_Engaged_N @ T_N_curr
+          currAxisAngleToZ = np.arccos(T_N_curr[2,2])
+
+          # calculate current pos/angle
+          displacement = np.linalg.norm(T_Engaged_curr[0:3,3])
+          angleDiff = np.arccos(T_Engaged_curr[2,2])
+
+          #=================== check attempt break conditions =================== 
+
+          # LOOP BREAK CONDITION 1
+          P_vac = -10000.0 
+          reached_vacuum = all(np.array(P_array)<P_vac)
+
+          if reached_vacuum:
+            # vacuum seal formed, success!
+            suctionSuccessFlag = True
+            print("Suction engage succeeded with controller")
+
+            # stop at the last pose
+            rtde_help.stopAtCurrPoseAdaptive()
+
+            # keep X sec of data after alignment is complete
+            rospy.sleep(0.1)
+            break
+          
+          # LOOP BREAK CONDITION 2
+          # if timeout, or displacement/angle passed, failed
+          elif time.time()-startTime >timeLimit or displacement > dispLimit:
+            args.timeOverFlag = time.time()-startTime >timeLimit
+            args.dispOverFlag = displacement > dispLimit
+
+            suctionSuccessFlag = False
+            print("Suction controller failed!")
+            sequentialFailures+=1
+
+            # stop at the last pose
+            rtde_help.stopAtCurrPoseAdaptive()
+            targetPWM_Pub.publish(DUTYCYCLE_0)
+            
+
+            # keep X sec of data after alignment is complete
+            rospy.sleep(0.1)
+            break
+          
+          prevTime = time.time()
+
+      else:
+        while not suctionSuccessFlag:
+          # 1. down to target pose
+          rtde_help.goToPose(targetPoseStamped, speed=args.speed, acc=args.acc)
+          iteration += 1
+          rospy.sleep(args.waitTime)
+
+          # calculate axis angle
+          measuredCurrPose = rtde_help.getCurrentPose()
+          T_N_curr = adpt_help.get_Tmat_from_Pose(measuredCurrPose)          
+          T_Engaged_curr = T_Engaged_N @ T_N_curr
+
+          # calculate current pos/angle
+          displacement = np.linalg.norm(T_Engaged_curr[0:3,3])
+
+          # 2. get sensor data
+          # PFT arrays to calculate Transformation matrices
+          P_array = P_help.four_pressure
+          T_array = [FT_help.averageTx_noOffset, FT_help.averageTy_noOffset]
+          F_array = [FT_help.averageFx_noOffset, FT_help.averageFy_noOffset]
+          F_normal = FT_help.averageFz_noOffset
+
+          # check force limits
+          Fx = F_array[0]
+          Fy = F_array[1]
+          Fz = F_normal
+          F_total = np.sqrt(Fx**2 + Fy**2 + Fz**2)
+
+          if F_total > 15:
+            print("net force acting on cup is too high")
+            args.forceLimitFlag = True
+            # stop at the last pose
+            rtde_help.stopAtCurrPose()
+            rospy.sleep(0.1)
+            break
+          
+          # 3. lift up and check suction success
+          targetSearchPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_offset, targetPoseStamped)
+          rtde_help.goToPose(targetSearchPoseStamped, speed=args.speed, acc=args.acc)
+          
+          # P_vac = P_help.P_vac
+          P_vac = -2000.0   
+          P_array_check = P_help.four_pressure
+          reached_vacuum = all(np.array(P_array_check)<P_vac)
+
+          if reached_vacuum:
+            # vacuum seal formed, success!
+            suctionSuccessFlag = True
+            print("Suction engage succeeded with controller")
+
+            # stop at the last pose
+            rtde_help.stopAtCurrPoseAdaptive()
+            args.elapedTime = time.time()-startTime
+            break
+
+          elif time.time()-startTime > timeLimit or displacement > dispLimit:
+            args.timeOverFlag = time.time()-startTime >timeLimit
+            args.dispOverFlag = displacement > dispLimit
+
+            suctionSuccessFlag = False
+            print("Haptic search fail")
+            # stop at the last pose
+            rtde_help.stopAtCurrPoseAdaptive()
+            targetPWM_Pub.publish(DUTYCYCLE_0)
+            rospy.sleep(0.1)
+            break
+
+          # 4. move to above the next search location
+          if args.mode == 'HS':
+            T_later = adpt_help.get_Tmat_lateralMove(P_array)
+          else:
+            T_later = adpt_help.get_Tmat_lateralMove_random()
+            print("Random search")
+
+          targetPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_later, measuredCurrPose)
+          targetSearchPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_offset, targetPoseStamped)
+          rtde_help.goToPose(targetSearchPoseStamped, speed=args.speed, acc=args.acc)
 
       
       # Save Init data
       dataLoggerEnable(False) # start data logging
       args.suctionSuccessFlag = suctionSuccessFlag
-      file_help.saveDataParams(args, appendTxt='jp_haptic_jumping_search'+'_PCB_'+str(args.PCB)+'_step_' + str(args.dLateral)+'_acc_' + str(args.acc)+'_waitTime_' + str(args.waitTime))
+      args.iteration = iteration
+      file_help.saveDataParams(args, appendTxt='jp_haptic_jumping_search'+'_mode_'+str(args.mode)+'_Level_'+str(args.level)+'_PCB_'+str(args.PCB))
       file_help.clearTmpFolder()
       P_help.stopSampling()
       rospy.sleep(0.5)
@@ -343,9 +450,12 @@ if __name__ == '__main__':
   parser = argparse.ArgumentParser()
   parser.add_argument('--speed', type=float, help='take image or use existingFile', default=0.3)
   parser.add_argument('--acc', type=float, help='location of target saved File', default=0.6)
-  parser.add_argument('--waitTime', type=float, help='location of target saved File', default=0.1)
+  parser.add_argument('--waitTime', type=float, help='location of target saved File', default=0.05)
   parser.add_argument('--dLateral', type=float, help='location of target saved File', default=0.005)
-  parser.add_argument('--height_comp', type=float, help='height compensate factor for scale', default=0.002)
-  parser.add_argument('--PCB', type=str, help='label of test PCB from 0 to 1', default='PCB')
+  parser.add_argument('--height_comp', type=float, help='height compensate factor for scale', default=0.002) # need to changed to 0.035 with suspension
+  parser.add_argument('--mode', type=str, help='mode of haptic search', default='HS')
+  parser.add_argument('--PCB', type=int, help='label of test PCB from 0 to 1', default=0)
+  parser.add_argument('--level', type=int, help='label of PCB categories', default=3)
+  parser.add_argument('--sliding', type=bool, help='label of search type (continous vs. jumping)', default=False)
   args = parser.parse_args()    
   main(args)
