@@ -148,6 +148,7 @@ def main(args):
         # add yaw angle to the disengage position
         targetOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2+pi/36*i,'sxyz') #static (s) rotating (r)
         targetPose = rtde_help.getPoseObj(disengagePosition, targetOrientation)
+        targetPose_init = targetPose
         rtde_help.goToPose(targetPose)
         targetPWM_Pub.publish(DUTYCYCLE_100)
         syncPub.publish(SYNC_RESET)
@@ -210,7 +211,7 @@ def main(args):
         syncPub.publish(SYNC_STOP)
         rospy.sleep(0.1)
         targetPWM_Pub.publish(DUTYCYCLE_0)
-        rtde_help.goToPose(targetPose)
+        rtde_help.goToPose(targetPose_init)
 
         # stop data logging
         rospy.sleep(0.2)
