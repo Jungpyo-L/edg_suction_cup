@@ -375,7 +375,7 @@ class adaptMotionHelp(object):
         return T_array_cup
 
 
-    def get_Tmats_from_controller(self, P_array, T_array_cup, controller_str, altFlag):
+    def get_Tmats_from_controller(self, P_array, FT_data, T_array_cup, controller_str, altFlag, loaded_model):
         # ["FTR","W1","W2","W3","W4","W5","PRLalt"]
         if controller_str == "FTR":
             # self.dw = 0.3 * np.pi / 180.0
@@ -420,6 +420,17 @@ class adaptMotionHelp(object):
             
             T_align = self.get_Tmat_alignSuction(P_array,weightVal=weightVal )
             T_later = self.get_Tmat_lateralMove(P_array, weightVal=1.0-weightVal)
+
+        elif controller_str == "DomeCurv":
+            T_align = np.eye(4)
+            T_later = np.eye(4)
+
+            dome = loaded_model.predict(FT_data)
+            # print("dome: ", dome[0])
+            if dome < 10:    # if curavture is less than 10, then use the lateral motion only
+                T_later = self.get_Tmat_lateralMove(P_array)
+            else:            # if curvature is greater than 10, then use rotation only
+                T_align = self.get_Tmat_alignSuction(P_array)
 
 
         return T_later, T_align

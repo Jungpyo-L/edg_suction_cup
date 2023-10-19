@@ -111,7 +111,7 @@ def main(args):
   
   # pose initialization
   xoffset = args.xoffset
-  disengagePosition_init =  [-0.597, .213, 0.025] # unit is in m
+  disengagePosition_init =  [-0.597, .211, 0.025] # unit is in m
   setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
   disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
 
@@ -124,7 +124,7 @@ def main(args):
     rospy.sleep(0.1)
 
     input("Press <Enter> to start to data collection")
-    for j in range(xoffset, 17):
+    for j in range(xoffset, 7):
 
       print("Move to the upated disengage point")
       # add offset to the disengage position
@@ -150,20 +150,21 @@ def main(args):
         targetPose = rtde_help.getPoseObj(disengagePosition, targetOrientation)
         targetPose_init = targetPose
         rtde_help.goToPose(targetPose)
-        targetPWM_Pub.publish(DUTYCYCLE_100)
+        # targetPWM_Pub.publish(DUTYCYCLE_100)
+        targetPWM_Pub.publish(DUTYCYCLE_0)
         syncPub.publish(SYNC_RESET)
         rospy.sleep(0.1)
 
         # set pressure and FT offset
         P_help.startSampling()      
-        rospy.sleep(0.5)
+        rospy.sleep(0.1) # default is 0.5
         FT_help.setNowAsBias()
         P_help.setNowAsOffset()
         Fz_offset = FT_help.averageFz
 
         # start data logging
         dataLoggerEnable(True)
-        rospy.sleep(0.5)
+        rospy.sleep(0.3) # default is 0.5
 
         print("move along normal")
         # flags and variables
@@ -199,7 +200,7 @@ def main(args):
 
         print("Start to record data")
         syncPub.publish(SYNC_START)
-        rospy.sleep(2)
+        rospy.sleep(1) # default is 2
         P_init = P_help.four_pressure
         P_vac = P_help.P_vac
         if all(np.array(P_init)<P_vac) and i == 0:
@@ -222,7 +223,7 @@ def main(args):
         file_help.saveDataParams(args, appendTxt='jp_lateral_'+'xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta))
         file_help.clearTmpFolder()
         P_help.stopSampling()
-        rospy.sleep(0.5)
+        rospy.sleep(0.3) # default is 0.5
         if SuctionFlag == True:
           break
 

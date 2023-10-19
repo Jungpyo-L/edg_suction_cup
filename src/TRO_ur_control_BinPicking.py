@@ -14,7 +14,9 @@ import string
 import matplotlib.pyplot as plt
 
 
-from utils import rotation_from_quaternion, create_transform_matrix, quaternion_from_matrix, normalize, hat
+# from utils import rotation_from_quaternion, create_transform_matrix, quaternion_from_matrix, normalize, hat
+from helperFunction.utils import rotation_from_quaternion, create_transform_matrix, quaternion_from_matrix, normalize, hat
+
 
 from datetime import datetime
 import pandas as pd
@@ -62,6 +64,14 @@ from helperFunction.gqcnn_policy_class import GraspProcessor
 #   print('Couldn\'t import ROS.  I assume you\'re running this on your laptop')
 #   ros_enabled = False
 
+from keras.models import load_model
+
+# model_name = 'FTforGamma.h5'
+# model_name = 'FTforGamma_latAmplified.h5'
+# model_name = 'FTforGamma_latAmplified2.h5'
+model_name = 'FTforDomeCurvature_latAmplified2.h5'
+directory = os.path.dirname(__file__)
+loaded_model =  load_model(directory + '/keras_models/' + model_name)
 
 def main(args):
   #========================== User Input================================================
@@ -81,7 +91,7 @@ def main(args):
   # controller_str = "W1"
   # controller_str = "W2"
   # controller_str = "W3"
-  controller_str = "W4"
+  # controller_str = "W4"
   # controller_str = "W5"
   # controller_str = "FTR"
   # controller_str = "PRLalt"
@@ -89,6 +99,7 @@ def main(args):
   # controller_str = "BML"
   # controller_str = "BMR"
   # controller_str = "BMLR"
+  controller_str = "DomeCurv"
 
   F_normalThres = [1.5, 2.0]
 
@@ -138,7 +149,8 @@ def main(args):
 
   # Load Camera Transform matrix    
   datadir = os.path.dirname(os.path.realpath(__file__))     # datadir = os.path.expanduser('~') + "/catkin_ws_new/src/tae_ur_experiment/src/"
-  with open(datadir + '/TransformMat_board_verified', 'rb') as handle:
+  # with open(datadir + '/TransformMat_board_verified', 'rb') as handle:
+  with open(datadir + '/TransformMat_board_verified_bin_picking', 'rb') as handle:
       loaded_data = pickle.load(handle)
   T_cam = loaded_data
   print("T_cam: ", T_cam)
@@ -170,10 +182,11 @@ def main(args):
 
   # pose initialization
   setOrientation = tf.transformations.quaternion_from_euler(pi,0,0,'sxyz') #static (s) rotating (r)
+  dropBoxOrientation = tf.transformations.quaternion_from_euler(pi,pi/3,0,'sxyz') #static (s) rotating (r)
   disEngagePose = rtde_help.getPoseObj(disengagePosition, setOrientation)
   BoxTopLeftCornerPose = rtde_help.getPoseObj(BoxTopLeftCorner_meter, setOrientation)
   BoxBottomRightCornerPose = rtde_help.getPoseObj(BoxBottomRightCorner_meter, setOrientation)
-  dropBoxPose = rtde_help.getPoseObj(dropBoxPosition, setOrientation)
+  dropBoxPose = rtde_help.getPoseObj(dropBoxPosition, dropBoxOrientation)
 
   # initilize counters
   failedPicks = 0
@@ -246,7 +259,7 @@ def main(args):
 
       # Copy transformation matrix
       currDir_path = os.path.dirname(os.path.realpath(__file__))    
-      shutil.copyfile(os.path.join(currDir_path, 'TransformMat_board_verified'), os.path.join(policyGen.ResultSavingDirectory, 'TransformMat_board_verified'))
+      shutil.copyfile(os.path.join(currDir_path, 'TransformMat_board_verified_bin_picking'), os.path.join(policyGen.ResultSavingDirectory, 'TransformMat_board_verified_bin_picking'))
       args.storedDataDirectory = policyGen.ResultSavingDirectory
 
       # flags that reset for each attempt
@@ -447,6 +460,7 @@ def main(args):
           T_array = [FT_help.averageTx_noOffset, FT_help.averageTy_noOffset]
           F_array = [FT_help.averageFx_noOffset, FT_help.averageFy_noOffset]
           F_normal = FT_help.averageFz_noOffset
+          FT_data = [[FT_help.averageFx_noOffset, FT_help.averageFy_noOffset, FT_help.averageFz_noOffset, FT_help.averageTx_noOffset, FT_help.averageTy_noOffset, FT_help.averageTz_noOffset]]
 
           # check force limits
           Fx = F_array[0]
@@ -469,7 +483,7 @@ def main(args):
           T_array_cup = adpt_help.get_T_array_cup(T_array, F_array, quat)
 
           # calculate transformation matrices
-          T_align, T_later = adpt_help.get_Tmats_from_controller(P_array, T_array_cup, controller_str, PFlag)
+          T_align, T_later = adpt_help.get_Tmats_from_controller(P_array, FT_data, T_array_cup, controller_str, PFlag, loaded_model)
           T_normalMove = adpt_help.get_Tmat_axialMove(F_normal, F_normalThres)
           T_move =  T_later @ T_align @ T_normalMove # lateral --> align --> normal
 
@@ -566,12 +580,12 @@ def main(args):
 
         # Move to Drop Box
         if suctionSuccessFlag:
-          DropPose = copy.deepcopy(PickUpPose)
+          DropPose = copy.deepcopy(dropBoxPose)
           DropPose.pose.position.x = dropBoxPosition[0]
           DropPose.pose.position.y = dropBoxPosition[1]
           DropPose.pose.position.z = dropBoxPosition[2]
           rtde_help.goToPose(DropPose)
-          rospy.sleep(0.1)
+          # rospy.sleep(0.1)
 
         # if seal was compromised while moving to dropbox
         dropBoxFailure = 0

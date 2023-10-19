@@ -52,8 +52,8 @@ def all_close(goal, actual, tolerance):
 class MoveGroupInterface(object):
   """MoveGroupPythonIntefaceTutorial"""
   
-  initOrientaionSXYZ = [pi, 0, pi/2]
-  # initOrientaionSXYZ = [pi, 0, 0] # for the new bin picking orientation (jp: 230125)
+  # initOrientaionSXYZ = [pi, 0, pi/2]
+  initOrientaionSXYZ = [pi, 0, 0] # for the new bin picking orientation (jp: 230125)
 
   def __init__(self, seedNum=0):
     super(MoveGroupInterface, self).__init__()
