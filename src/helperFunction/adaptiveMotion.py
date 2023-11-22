@@ -190,7 +190,7 @@ class adaptMotionHelp(object):
         r_p = r_p / np.linalg.norm(r_p)
 
         if abs(dP_WE) > dP_threshold:
-            dy_lat = r_p[0] * d_lat * weightVal  
+            dy_lat = r_p[0] * d_lat * weightVal
             
         if abs(dP_SN) > dP_threshold:
             dx_lat = r_p[1] * d_lat * weightVal
@@ -375,7 +375,7 @@ class adaptMotionHelp(object):
         return T_array_cup
 
 
-    def get_Tmats_from_controller(self, P_array, FT_data, T_array_cup, controller_str, altFlag, loaded_model):
+    def get_Tmats_from_controller(self, P_array, T_array_cup, controller_str, altFlag):
         # ["FTR","W1","W2","W3","W4","W5","PRLalt"]
         if controller_str == "FTR":
             # self.dw = 0.3 * np.pi / 180.0
@@ -421,19 +421,40 @@ class adaptMotionHelp(object):
             T_align = self.get_Tmat_alignSuction(P_array,weightVal=weightVal )
             T_later = self.get_Tmat_lateralMove(P_array, weightVal=1.0-weightVal)
 
-        elif controller_str == "DomeCurv":
-            T_align = np.eye(4)
-            T_later = np.eye(4)
-
-            dome = loaded_model.predict(FT_data)
-            # print("dome: ", dome[0])
-            if dome < 10:    # if curavture is less than 10, then use the lateral motion only
-                T_later = self.get_Tmat_lateralMove(P_array)
-            else:            # if curvature is greater than 10, then use rotation only
-                T_align = self.get_Tmat_alignSuction(P_array)
-
 
         return T_later, T_align
+
+    def get_Tmats_from_ML_model(self, P_array, FT_data, loaded_model):
+        T_align = np.eye(4)
+        T_later = np.eye(4)
+        alpha = 1
+
+        dome = loaded_model.predict(FT_data)
+        # print("dome: ", dome[0])
+        if dome < 10:    # if curavture is less than 10, then use the lateral motion only
+            T_later = self.get_Tmat_lateralMove(P_array)
+            alpha = 0
+        else:            # if curvature is greater than 10, then use rotation only
+            T_align = self.get_Tmat_alignSuction(P_array)
+
+
+        return T_later, T_align, alpha
+    
+    def get_Tmats_from_MLGamma_model(self, P_array, FT_data, loaded_model):
+        T_align = np.eye(4)
+        T_later = np.eye(4)
+        alpha = 1
+
+        gamma = loaded_model.predict(FT_data)
+        # print("dome: ", dome[0])
+        if gamma < 10:    # if offset is less than 10, then use the lateral motion only
+            T_later = self.get_Tmat_lateralMove(P_array)
+            alpha = 0
+        else:            # if offset is greater than 10, then use rotation only
+            T_align = self.get_Tmat_alignSuction(P_array)
+
+
+        return T_later, T_align, alpha
 
     def get_Tmat_axialMove(self, F_normal, F_normalThres):
         

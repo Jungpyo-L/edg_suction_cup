@@ -43,7 +43,6 @@ import geometry_msgs.msg
 import tf
 import cv2
 from scipy import signal
-from icecream import ic
 
 from math import pi, cos, sin
 from controller_manager_msgs.msg import ControllerState
@@ -67,10 +66,12 @@ from helperFunction.gqcnn_policy_class import GraspProcessor
 
 from keras.models import load_model
 
+from icecream import ic
+
 # model_name = 'FTforGamma.h5'
 # model_name = 'FTforGamma_latAmplified.h5'
-# model_name = 'FTforGamma_latAmplified2.h5'
-model_name = 'FTforDomeCurvature_latAmplified2.h5'
+model_name = 'FTforGamma_latAmplified2.h5'
+# model_name = 'FTforDomeCurvature_latAmplified2.h5'
 directory = os.path.dirname(__file__)
 loaded_model =  load_model(directory + '/keras_models/' + model_name)
 
@@ -78,10 +79,10 @@ def main(args):
   #========================== User Input================================================
   H_cup = 420e-3
 
-  disengagePosition =  [-690e-3, 65e-3, H_cup]
+  disengagePosition =  [-690e-3, 85e-3, H_cup]
   
-  TopLeftPix = [50, 50] # x, y  # Need to double check from the test image.
-  BottomRightPix = [640-50, 480-50] # x, y
+  TopLeftPix = [10, 10] # x, y  # Need to double check from the test image.
+  BottomRightPix = [400, 300] # x, y
   # boxWidth = 240e-3
   # boxLength = 300e-3
   BoxTopLeftCorner_meter = [-480e-3, 270e-3, 70e-3] # for new bin picking configuration (230125)
@@ -90,7 +91,7 @@ def main(args):
 
   # controller_str = "NON"
   # controller_str = "W1"
-  controller_str = "W2"
+  # controller_str = "W2"
   # controller_str = "W3"
   # controller_str = "W4"
   # controller_str = "W5"
@@ -100,7 +101,7 @@ def main(args):
   # controller_str = "BML"
   # controller_str = "BMR"
   # controller_str = "BMLR"
-  # controller_str = "DomeCurv"
+  controller_str = "DomeCurv"
 
   F_normalThres = [1.5, 2.0]
 
@@ -108,11 +109,8 @@ def main(args):
   
   # CONSTANTS
   h_cam_cup = 80e-3
-  thickness = 10e-3
-  # thickness = 100e-3
+  thickness = 20e-3
   depthThreshold = h_cam_cup + H_cup - thickness
-  depthThreshold = 495e-3
-  # depthThreshold = 100e-3
 
   fileAppendixStr = 'GQCNN_ADAPTIVE'
   pick_place_z = H_cup
@@ -148,10 +146,10 @@ def main(args):
   rtde_help = rtdeHelp(rtde_frequency)
   rospy.sleep(0.5)
   file_help = fileSaveHelp()
-  adpt_help = adaptMotionHelp(dw = 0.5, d_lat = 0.5e-3, d_z = 0.1e-3)
+  adpt_help = adaptMotionHelp(dw = 0.5, d_lat = 0.005, d_z = 0.1e-3)
   policyGen = GraspProcessor(depth_thres = depthThreshold, num_actions=30)
 
-  # Load Camera Transform matrix    
+  # Load Camera Transform matrix
   datadir = os.path.dirname(os.path.realpath(__file__))     # datadir = os.path.expanduser('~') + "/catkin_ws_new/src/tae_ur_experiment/src/"
   # with open(datadir + '/TransformMat_board_verified', 'rb') as handle:
   with open(datadir + '/TransformMat_board_verified_bin_picking', 'rb') as handle:
@@ -222,9 +220,6 @@ def main(args):
       attemptIdx = 0
       successfulPicks = 0
       sequentialFailures = 0
-    
-      pickHistory = []
-      
 
     while attemptIdx < 57 and successfulPicks < 19 and sequentialFailures < 10:
 
@@ -234,11 +229,10 @@ def main(args):
       print("Attempt: ", attemptIdx)
       print("successfulPicks: ", successfulPicks)
       print("failures in a row: ", sequentialFailures)
-      
+      targetPWM_Pub.publish(DUTYCYCLE_0)
+
       # input("Press <Enter> to go disEngagePose")
       print("goToPose disEngagePose")
-      ultimateSuccess = 0
-      ic(pickHistory)
       rtde_help.goToPose(disEngagePose)
       rospy.sleep(0.5)
       initEndEffPoseStamped = rtde_help.getCurrentPose()
@@ -274,7 +268,6 @@ def main(args):
       # flags that reset for each attempt
       farFlag = True
       suctionSuccessFlag = False
-      
 
       # =================== Check if the highest priority pose is viable ===================
       for poseIdx in range(0, len(poseList) ):
@@ -373,7 +366,7 @@ def main(args):
  
       print("time before axial movement: ", time.time() - pickStartTime)
       # while cup is far from object
-      rospy.sleep(3)
+      rospy.sleep(0.1)
       for i in range(3):
         T_move = adpt_help.get_Tmat_TranlateInZ(direction = 1)
         targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPose)
@@ -415,7 +408,7 @@ def main(args):
       T_Engaged_N = np.linalg.inv(T_N_Engaged)
       
       #=================== check success of gqcnn ===================  
-      # compared pressure readings to vacuum pressure, sets the success flag 
+      # compared pressure readings to vacuum pressure, sets the success flag
       P_init = P_help.four_pressure
       P_vac = P_help.P_vac
       if all(np.array(P_init)<P_vac):
@@ -446,16 +439,72 @@ def main(args):
       # dataLoggerEnable(True)
       # rospy.sleep(1)
 
-      
+      targetPoseStamped = copy.deepcopy(targetPose)
+      input("Press <Enter> to continue to adaptive motion")
+      alpha = 0.5
 
       if not suctionSuccessFlag: # and "NON" not in controller_str: # if init contact is not successful
         adpt_help.BM_step = 0 # initializa step for the Brownian motion
         while not suctionSuccessFlag:   # while no success in grasp, run controller until success or timeout
           
+          # stop gotopose[adaptive] function
+          print('stopping gotopose functions here')
+          if alpha == 0:
+            rtde_help.stopAtCurrPose()
+          elif alpha == 1:
+            rtde_help.stopAtCurrPoseAdaptive()
+          
+          # 1. down to target pose
+          # rtde_help.stopAtCurrPoseAdaptive()
+          input('approach tPS')
+          rtde_help.goToPose(targetPoseStamped, speed=0.3, acc=0.6)
+          if alpha == 0:
+            rospy.sleep(0.2)
+          else:
+            rospy.sleep(0.01)
+
+          # calculate axis angle
+          measuredCurrPose = rtde_help.getCurrentPose()
+          T_N_curr = adpt_help.get_Tmat_from_Pose(measuredCurrPose)          
+          T_Engaged_curr = T_Engaged_N @ T_N_curr
+
+          # calculate current pos/angle
+          displacement = np.linalg.norm(T_Engaged_curr[0:3,3])
+
           # no controller
           if "NON" in controller_str:
             print("ONLY DEXNET, NO ADAPTIVE CONTROL")
             timeLimit = 2
+
+          farFlag = True
+
+          # input('approach for Fz control')
+          while farFlag:
+            ic(F_normal)
+            if F_normal > -F_normalThres[0]:
+              T_move = adpt_help.get_Tmat_TranlateInZ(direction = 1)
+              targetPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPoseStamped)
+              rtde_help.goToPoseAdaptive(targetPoseStamped, time = 0.1)
+
+              # new normal force
+              F_normal = FT_help.averageFz_noOffset
+
+            elif F_normal < -F_normalThres[1]:
+              T_move = adpt_help.get_Tmat_TranlateInZ(direction = -1)
+              targetPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPoseStamped)
+              rtde_help.goToPoseAdaptive(targetPoseStamped, time = 0.1)
+              
+              # new normal force
+              F_normal = FT_help.averageFz_noOffset
+
+            else:
+              farFlag = False
+              rtde_help.stopAtCurrPoseAdaptive()
+              print("reached threshhold normal force: ", F_normal)
+              rospy.sleep(0.01)
+          
+          measuredCurrPose = rtde_help.getCurrentPose()
+          rospy.sleep(0.01)
           
           # for alternating controller
           if time.time() - alternateTime > 0.5:
@@ -479,11 +528,10 @@ def main(args):
           F_total = np.sqrt(Fx**2 + Fy**2 + Fz**2)
 
           if F_total > 20:
-            # input("net force acting on cup is too high")
+            print("net force acting on cup is too high")
 
             # stop at the last pose
-            # rtde_help.stopAtCurrPose()
-            rtde_help.stopAtCurrPoseAdaptive()
+            rtde_help.stopAtCurrPose()
             rospy.sleep(0.1)
             sequentialFailures+=1
             targetPWM_Pub.publish(DUTYCYCLE_0)
@@ -494,26 +542,61 @@ def main(args):
           T_array_cup = adpt_help.get_T_array_cup(T_array, F_array, quat)
 
           # calculate transformation matrices
-          T_align, T_later = adpt_help.get_Tmats_from_controller(P_array, T_array_cup, controller_str, PFlag)
-          T_normalMove = adpt_help.get_Tmat_axialMove(F_normal, F_normalThres)
-          T_move =  T_later @ T_align @ T_normalMove # lateral --> align --> normal
+          if controller_str == "DomeCurv":
+            # T_later, T_align, alpha = adpt_help.get_Tmats_from_ML_model(P_array, FT_data, loaded_model)
+            T_later, T_align, alpha = adpt_help.get_Tmats_from_MLGamma_model(P_array, FT_data, loaded_model)
+            # alpha = 0
+            # alpha = 1
+              
+            if alpha == 0:
+              ic(alpha)
+              # rtde_help.stopAtCurrPoseAdaptive()
 
-          # move to new pose adaptively
-          measuredCurrPose = rtde_help.getCurrentPose()
-          currPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, measuredCurrPose)
-          rtde_help.goToPoseAdaptive(currPose)
+              # 3. lift up
+              input('lift up')
+              targetSearchPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_offset, measuredCurrPose)
+              rtde_help.goToPose(targetSearchPoseStamped, speed=0.3, acc=0.6)
+              # rtde_help.goToPoseAdaptive(targetSearchPoseStamped, speed=0.3, acc=0.6)
+              rospy.sleep(0.01)
 
-          # calculate axis angle
-          T_N_curr = adpt_help.get_Tmat_from_Pose(measuredCurrPose)          
-          T_Engaged_curr = T_Engaged_N @ T_N_curr
-          currAxisAngleToZ = np.arccos(T_N_curr[2,2])
+              # 4. move to above the next search location
+              T_later = adpt_help.get_Tmat_lateralMove(P_array)
+              T_normalMove = adpt_help.get_Tmat_axialMove(F_normal, F_normalThres)
+              T_move =  T_later @ T_normalMove
 
-          # calculate current pos/angle
-          displacement = np.linalg.norm(T_Engaged_curr[0:3,3])
-          angleDiff = np.arccos(T_Engaged_curr[2,2])
+              # ic(T_later)
+
+              targetPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_move, measuredCurrPose)
+              targetSearchPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_offset, targetPoseStamped)
+              input('go to tSPS')
+              rtde_help.goToPose(targetSearchPoseStamped, speed=0.3, acc=0.6)
+              # rtde_help.goToPoseAdaptive(targetSearchPoseStamped, speed=0.3, acc=0.6)
+              rospy.sleep(0.01)
+              
+            elif alpha == 1:
+              ic(alpha)
+              # rtde_help.stopAtCurrPose()
+              
+
+              # 3. rotate about current location
+              T_normalMove = adpt_help.get_Tmat_axialMove(F_normal, F_normalThres)
+              T_move =  T_align @ T_normalMove
+
+              # ic(T_align)
+
+              targetPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_move, measuredCurrPose)
+              targetSearchPoseStamped = copy.deepcopy(targetPoseStamped)
+              rtde_help.goToPoseAdaptive(targetSearchPoseStamped)
+              rospy.sleep(0.01)
+              
+
+          else:
+            T_align, T_later = adpt_help.get_Tmats_from_controller(P_array, T_array_cup, controller_str, PFlag)
+
+          
 
           #=================== check attempt break conditions =================== 
-
+          
           # LOOP BREAK CONDITION 1
           reached_vacuum = all(np.array(P_array)<P_vac)
           # print("loop time: ", time.time()-prevTime)
@@ -528,38 +611,68 @@ def main(args):
             print("Suction engage succeeded with controller")
 
             # stop at the last pose
-            rtde_help.stopAtCurrPoseAdaptive()
+            # rtde_help.stopAtCurrPose()
+            # rtde_help.stopAtCurrPoseAdaptive()
 
             # keep X sec of data after alignment is complete
             rospy.sleep(0.1)
             break
           
           # LOOP BREAK CONDITION 2
-          # if timeout, or displacement/angle passed, failed
-          elif time.time()-startTime >timeLimit or displacement > dispLimit or angleDiff > angleLimit or currAxisAngleToZ < (np.pi*2/3):
+          elif time.time()-startTime > timeLimit: # or displacement > dispLimit:
             args.timeOverFlag = time.time()-startTime >timeLimit
             args.dispOverFlag = displacement > dispLimit
-            args.angleOverFlag = angleDiff > angleLimit
-            args.angleTooFlatFlag = currAxisAngleToZ < (np.pi*2/3)
 
             suctionSuccessFlag = False
-            print("Suction controller failed!")
-            sequentialFailures+=1
-
+            print("Haptic search fail")
             # stop at the last pose
-            rtde_help.stopAtCurrPoseAdaptive()
+            # rtde_help.stopAtCurrPose()
+            # rtde_help.stopAtCurrPoseAdaptive()
             targetPWM_Pub.publish(DUTYCYCLE_0)
-            
-
-            # keep X sec of data after alignment is complete
             rospy.sleep(0.1)
             break
+
+          # # if timeout, or displacement/angle passed, failed
+          # elif time.time()-startTime >timeLimit or displacement > dispLimit or angleDiff > angleLimit or currAxisAngleToZ < (np.pi*2/3):
+          #   args.timeOverFlag = time.time()-startTime >timeLimit
+          #   args.dispOverFlag = displacement > dispLimit
+          #   args.angleOverFlag = angleDiff > angleLimit
+          #   args.angleTooFlatFlag = currAxisAngleToZ < (np.pi*2/3)
+
+          #   suctionSuccessFlag = False
+          #   print("Suction controller failed!")
+          #   sequentialFailures+=1
+
+          #   # stop at the last pose
+          #   rtde_help.stopAtCurrPoseAdaptive()
+          #   targetPWM_Pub.publish(DUTYCYCLE_0)
+            
+
+          #   # keep X sec of data after alignment is complete
+          #   rospy.sleep(0.1)
+          #   break
+
           
-          prevTime = time.time()
+
+          
+
+
+          # T_normalMove = adpt_help.get_Tmat_axialMove(F_normal, F_normalThres)
+          # T_move =  T_later @ T_align @ T_normalMove # lateral --> align --> normal
+
+          
+
+          # prevTime = time.time()
 
       #=================== attempt has ended =================== 
       print("time after attempt ends: ", time.time() - pickStartTime)
       args.afterExploreSuccess = suctionSuccessFlag
+
+      print('stopping gotopose functions here')
+      if alpha == 0:
+        rtde_help.stopAtCurrPose()
+      elif alpha == 1:
+        rtde_help.stopAtCurrPoseAdaptive()
 
       #=================== if attempt was successful, pick and place in bin =================== 
       if suctionSuccessFlag: # if the suction finally succeeded, then pick-place operation
@@ -617,30 +730,22 @@ def main(args):
           print("seal was not compromised while moving obj to dropbox")
           successfulPicks += 1
           sequentialFailures=0
-          ultimateSuccess = 1
 
         targetPWM_Pub.publish(DUTYCYCLE_0)
         
       else:   # lift up, TAKE A NEW PICTURE AND RERUN
-        # input('get final pose')
         finalPose = rtde_help.getCurrentPose()
-        finalPose.pose.position.z += 4e-2
-        # input('go final pose + some height')  
+        finalPose.pose.position.z += 4e-2        
         rtde_help.goToPose(finalPose)
-      
-      pickHistory.append(ultimateSuccess)
 
       # Save Init data
-      # input('save input data')
       dataLoggerEnable(False) # start data logging
       args.successfulPicks = successfulPicks
       args.sequentialFailures = sequentialFailures
       args.attemptIdx = attemptIdx
       args.controller_str = controller_str
       args.BrowianMotion = [adpt_help.BM_x, adpt_help.BM_y]
-      args.pickHistory = pickHistory
-      rospy.sleep(0.5)
-
+      rospy.sleep(0.5)      
       P_help.stopSampling()   
       file_help.saveDataParams(args,appendTxt=fileAppendixStr+'_'+str(attemptIdx) + "_controller_" + controller_str)
       attemptIdx+=1
