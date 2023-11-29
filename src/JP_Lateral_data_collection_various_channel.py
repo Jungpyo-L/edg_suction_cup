@@ -43,7 +43,7 @@ from scipy import signal
 from math import pi, cos, sin, floor
 
 
-from helperFunction.SuctionP_callback_helper import P_CallbackHelp
+from helperFunction.SuctionP_callback_helper_ch6 import P_CallbackHelp #check channel number
 from helperFunction.FT_callback_helper import FT_CallbackHelp
 from helperFunction.fileSaveHelper import fileSaveHelp
 from helperFunction.rtde_helper import rtdeHelp
@@ -82,10 +82,15 @@ def main(args):
 
   # Set the TCP offset and calibration matrix
   rospy.sleep(0.5)
-  rtde_help.setTCPoffset([0, 0, 0.150, 0, 0, 0])
+  if args.ch == 6:
+    rtde_help.setTCPoffset([0, 0, 0.170, 0, 0, 0])
+  else:
+    rtde_help.setTCPoffset([0, 0, 0.150, 0, 0, 0])
   rospy.sleep(0.2)
   rtde_help.setCalibrationMatrix()
   rospy.sleep(0.2)
+
+  
 
   if FT_SimulatorOn:
     print("wait for FT simul")
@@ -113,6 +118,8 @@ def main(args):
   # pose initialization
   xoffset = args.xoffset
   disengagePosition_init =  [-0.592, .206, 0.025] # unit is in m
+  if args.ch == 6:
+    disengagePosition_init =  [-0.5915, .206, 0.045] # unit is in m
   setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
   disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
 
@@ -136,6 +143,8 @@ def main(args):
     if args.zHeight == True:
       with open(datadir + '/engage_z.p', 'rb') as handle:
         engage_z = pickle.load(handle) -4e-3
+        if args.ch == 6:
+          engage_z = engage_z + 19e-3
       
     else:
       initEndEffPoseStamped = rtde_help.getCurrentPose()
@@ -245,13 +254,16 @@ def main(args):
         args.pressure_avg = P_init
         P_vac = P_help.P_vac
         # P_init[1] = P_init[0] # for the case of channel 3 suction cup
-        P_init[1] = P_init[0] # for the case of channel 2 suction cup
-        P_init[3] = P_init[2] # for the case of channel 2 suction cup
+        # P_init[1] = P_init[0] # for the case of channel 2 suction cup
+        # P_init[3] = P_init[2] # for the case of channel 2 suction cup
         if all(np.array(P_init)<P_vac) and i == 0 and j != 7:
           print("Suction Engage Succeed from initial touch")
           SuctionFlag = True
         else:
           SuctionFlag = False
+        if args.ch == 6:
+          if j<7:
+            SuctionFlag = True
         print("Stop to record data")
         syncPub.publish(SYNC_STOP)
         rospy.sleep(0.1)
