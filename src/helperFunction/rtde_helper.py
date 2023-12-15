@@ -170,9 +170,9 @@ class rtdeHelp(object):
         print("distDiff: %.4f" % distDiff)
         return distDiff < checkDistThres and quatDiff < checkQuatThres
             
-
+    # def goToPoseAdaptive(self, goalPose, speed = 0.0, acc = 0.0,  time = 0.05, lookahead_time = 0.2, gain = 100.0): # normal force measurement
     # def goToPoseAdaptive(self, goalPose, speed = 0.02, acc = 0.02,  time = 0.05, lookahead_time = 0.05, gain = 200.0):
-    def goToPoseAdaptive(self, goalPose, speed = 0.0, acc = 0.0,  time = 0.05, lookahead_time = 0.1, gain = 200.0):
+    def goToPoseAdaptive(self, goalPose, speed = 0.0, acc = 0.0,  time = 0.05, lookahead_time = 0.2, gain = 200.0):
         # lookahead_time range [0.03 0.2]
         # grain range [100 2000]
         t_start = self.rtde_c.initPeriod()

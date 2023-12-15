@@ -60,6 +60,10 @@ def main(args):
   SYNC_RESET = 0
   SYNC_START = 1
   SYNC_STOP = 2
+  timeLimit = 15.0 # searching time limit  
+  dispLimit = 50e-3 # displacement limit
+
+ 
 
   F_normalThres = [args.normalForce, args.normalForce+0.5]
   args.normalForce_thres = F_normalThres
@@ -73,12 +77,12 @@ def main(args):
   # Setup helper functions
   FT_help = FT_CallbackHelp() # it deals with subscription.
   rospy.sleep(0.5)
-  # P_help = P_CallbackHelp() # it deals with subscription.
-  # rospy.sleep(0.5)
+  P_help = P_CallbackHelp() # it deals with subscription.
+  rospy.sleep(0.5)
   rtde_help = rtde_help = rtdeHelp(125)
   rospy.sleep(0.5)
   file_help = fileSaveHelp()
-  adpt_help = adaptMotionHelp(dw = 0.5, d_lat = 0.5e-3, d_z = 0.1e-3)
+  adpt_help = adaptMotionHelp(dw = 0.5, d_lat = 5e-3, d_z = 0.1e-3)
 
   # Set the TCP offset and calibration matrix
   rospy.sleep(0.5)
@@ -112,89 +116,137 @@ def main(args):
   
   # pose initialization
   xoffset = args.xoffset
-  disengagePosition_init =  [-0.592, .207, 0.0165] # unit is in m
+  disengagePosition_init =  [-0.451, .206, 0.025] # unit is in m
   setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
   disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
+
+  EngagePosition_init =  [-0.451, .206, 0.010] # unit is in m
+  EngagePose = rtde_help.getPoseObj(EngagePosition_init, setOrientation)
+
+
+  P_vac = P_help.P_vac
+  timeLimit = 15 # sec
 
 
   # try block so that we can have a keyboard exception
   try:
-    # Go to disengage Pose
-    input("Press <Enter> to go disEngagePose")
-    rtde_help.goToPose(disEngagePose)
+
+    print("Start to approach to target Pose")
+    targetPoseStamped = EngagePose
+    T_offset = adpt_help.get_Tmat_TranlateInBodyF([0., 0., -15e-3]) # small offset from the target pose
+    targetSearchPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_offset, targetPoseStamped)
+    rtde_help.goToPose(targetSearchPoseStamped)
     rospy.sleep(0.1)
 
-    # P_help.startSampling()      
+    P_help.startSampling()      
     rospy.sleep(0.5)
     FT_help.setNowAsBias()
-    # P_help.setNowAsOffset()
+    P_help.setNowAsOffset()
     Fz_offset = FT_help.averageFz
+    T_offset = adpt_help.get_Tmat_TranlateInBodyF([0., 0., -15e-3]) # small offset from the target pose
 
 
-    input("Press <Enter> to go normal to get engage point")
-    dataLoggerEnable(True)
-    rospy.sleep(0.3) # default is 0.5
+    input("press <Enter> to start haptic search")
+    # print("Start to haptic search")
+    # flag for alternating, time that controller starts trying to grasp
+    PFlag = False
+    startTime = time.time()
+    alternateTime = time.time()
+    prevTime = 0
+    suctionSuccessFlag = False
+    targetPWM_Pub.publish(DUTYCYCLE_100)
 
-    print("move along normal")
-    targetPose = rtde_help.getCurrentPose()
+    # get initial pose to check limits
+    T_N_Engaged = adpt_help.get_Tmat_from_Pose(targetPoseStamped) # relative angle limit
+    T_Engaged_N = np.linalg.inv(T_N_Engaged)
 
-    # flags and variables
-    
-    farFlag = True
-    
-    # slow approach until it reach target height
-    F_normal = FT_help.averageFz_noOffset
-    targetPoseEngaged = rtde_help.getCurrentPose()
-    # targetPWM_Pub.publish(DUTYCYCLE_0)
-    syncPub.publish(SYNC_START)
-    while farFlag:
-        if targetPoseEngaged.pose.position.z > disengagePosition_init[2] - 0.008:
-          T_move = adpt_help.get_Tmat_TranlateInZ(direction = 1)
-          targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPose)
-          rtde_help.goToPoseAdaptive(targetPose, time = 0.1)
+    while not suctionSuccessFlag:
+      # 1. down to target pose
+      rtde_help.goToPose(targetPoseStamped, speed=args.speed, acc=args.acc)
+      rospy.sleep(args.waitTime)
 
-          # new z height
-          targetPoseEngaged = rtde_help.getCurrentPose()
+      # calculate axis angle
+      measuredCurrPose = rtde_help.getCurrentPose()
+      T_N_curr = adpt_help.get_Tmat_from_Pose(measuredCurrPose)          
+      T_Engaged_curr = T_Engaged_N @ T_N_curr
 
-        else:
-          farFlag = False
-          rtde_help.stopAtCurrPoseAdaptive()
-          print("reached threshhold normal force: ", F_normal)
-          args.normalForceUsed= F_normal
-          rospy.sleep(0.1)
-          syncPub.publish(SYNC_STOP)
-          rospy.sleep(0.2)
-          
-    
-    rtde_help.goToPose(disEngagePose)
+      # calculate current pos/angle
+      displacement = np.linalg.norm(T_Engaged_curr[0:3,3])
+
+      # 2. get sensor data
+      # PFT arrays to calculate Transformation matrices
+      P_array = P_help.four_pressure
+      T_array = [FT_help.averageTx_noOffset, FT_help.averageTy_noOffset]
+      F_array = [FT_help.averageFx_noOffset, FT_help.averageFy_noOffset]
+      F_normal = FT_help.averageFz_noOffset
+
+      # check force limits
+      Fx = F_array[0]
+      Fy = F_array[1]
+      Fz = F_normal
+      F_total = np.sqrt(Fx**2 + Fy**2 + Fz**2)
+
+      if F_total > 12:
+        print("net force acting on cup is too high")
+        args.forceLimitFlag = True
+        # stop at the last pose
+        rtde_help.stopAtCurrPose()
+        rospy.sleep(0.1)
+        break
+      
+      # 3. lift up and check suction success
+      targetSearchPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_offset, targetPoseStamped)
+      rtde_help.goToPose(targetSearchPoseStamped, speed=args.speed, acc=args.acc)
+      
+      # P_vac = P_help.P_vac
+      P_vac = -2500.0   
+      P_array_check = P_help.four_pressure
+      reached_vacuum = all(np.array(P_array_check)<P_vac)
+
+      if reached_vacuum:
+        # vacuum seal formed, success!
+        suctionSuccessFlag = True
+        print("Suction engage succeeded with controller")
+
+        # stop at the last pose
+        rtde_help.stopAtCurrPoseAdaptive()
+        args.elapedTime = time.time()-startTime
+        break
+
+      elif time.time()-startTime > timeLimit or displacement > dispLimit:
+        args.timeOverFlag = time.time()-startTime >timeLimit
+        args.dispOverFlag = displacement > dispLimit
+
+        suctionSuccessFlag = False
+        print("Haptic search fail")
+        # stop at the last pose
+        rtde_help.stopAtCurrPoseAdaptive()
+        targetPWM_Pub.publish(DUTYCYCLE_0)
+        rospy.sleep(0.1)
+        break
+
+      # 4. move to above the next search location
+      T_later = adpt_help.get_Tmat_lateralMove(P_array)
+      targetPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_later, measuredCurrPose)
+      targetSearchPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_offset, targetPoseStamped)
+      rtde_help.goToPose(targetSearchPoseStamped, speed=args.speed, acc=args.acc)
+
+    input("press enter to go disengage pose")
     rospy.sleep(0.1)
-
-    # stop data logging
-    rospy.sleep(0.2)
-    dataLoggerEnable(False)
-    rospy.sleep(0.2)    
-
-    # save data and clear the temporary folder
-    file_help.saveDataParams(args, appendTxt='jp_various_suction_cup_normal_'+'ch_' + str(args.ch)+'_formlab_' + str(args.formlab))
-    file_help.clearTmpFolder()
-
-
-    print("Go to disengage point")
+    targetPWM_Pub.publish(DUTYCYCLE_0)
     setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
     disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
     rtde_help.goToPose(disEngagePose)
     # cartesian_help.goToPose(disEngagePose,wait=True)
     rospy.sleep(0.3)
 
-
-
     print("============ Stopping data logger ...")
     print("before dataLoggerEnable(False)")
     print(dataLoggerEnable(False)) # Stop Data Logging
     print("after dataLoggerEnable(False)")
-    
+  
 
-    # P_help.stopSampling()
+    P_help.stopSampling()
 
 
     print("============ Python UR_Interface demo complete!")
@@ -218,7 +270,10 @@ if __name__ == '__main__':
   parser.add_argument('--normalForce', type=float, help='normal force', default= 1.5)
   parser.add_argument('--zHeight', type=bool, help='use presset height mode? (rather than normal force)', default= False)
   parser.add_argument('--ch', type=int, help='number of channel', default= 4)
-  parser.add_argument('--formlab', type=int, help='formlab', default= 1)
+  parser.add_argument('--speed', type=float, help='take image or use existingFile', default=0.3)
+  parser.add_argument('--acc', type=float, help='location of target saved File', default=0.6)
+  parser.add_argument('--waitTime', type=float, help='location of target saved File', default=0.1)
+  parser.add_argument('--dLateral', type=float, help='location of target saved File', default=0.005)
 
 
   args = parser.parse_args()    

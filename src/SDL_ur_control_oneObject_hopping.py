@@ -20,7 +20,7 @@ from calendar import month_abbr
 import os, sys
 import string
 import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
+
 
 from moveGroupInterface_Tae import MoveGroupInterface
 from scipy.io import savemat
@@ -28,7 +28,6 @@ from scipy.spatial.transform import Rotation as sciRot
 
 # from utils import rotation_from_quaternion, create_transform_matrix, quaternion_from_matrix, normalize, hat
 from helperFunction.utils import rotation_from_quaternion, create_transform_matrix, quaternion_from_matrix, normalize, hat
-# from .utils import rotation_from_quaternion, create_transform_matrix, quaternion_from_matrix, normalize, hat
 
 from datetime import datetime
 import pandas as pd
@@ -72,37 +71,17 @@ from helperFunction.fileSaveHelper import fileSaveHelp
 from helperFunction.rtde_helper import rtdeHelp
 from helperFunction.adaptiveMotion import adaptMotionHelp
 from helperFunction.gqcnn_policy_class import GraspProcessor
+
 from icecream import ic
-
-import keras
-import keras.backend as kb
-from keras.models import Sequential
 from keras.models import load_model
-from keras.layers import Dense, BatchNormalization, Lambda
-
-def mse_angular(y_true, y_pred):
-    y_true = float(y_true)
-    return kb.mean(kb.square(kb.minimum(kb.abs(y_pred - y_true), 360 - kb.abs(y_pred - y_true))), axis=-1)
-
-directory = os.path.dirname(__file__)
 
 # model_name = 'FTforGamma.h5'
 # model_name = 'FTforGamma_latAmplified.h5'
 # model_name = 'FTforGamma_latAmplified2.h5'
-# model_name = 'FTforDomeCurvature_latAmplified2.h5'
-# model_name = 'FTforPhi_latAmplified2_20000.h5'
-# loaded_model =  load_model(directory + '/keras_models/' + model_name, custom_objects={'mse_angular': mse_angular})
+model_name = 'FTforDomeCurvature_latAmplified2.h5'
+directory = os.path.dirname(__file__)
+loaded_model =  load_model(directory + '/keras_models/' + model_name)
 
-# output_scale = 360.0
-# custom_objects = {
-#     'mse_angular': mse_angular,
-#     'BatchNormalization': BatchNormalization,
-#     '<lambda>': lambda x: x * 360.0
-# }
-# model_name = 'FTforPhi_latAmplified2_10000_batchNormalization_sigmoid.h5'
-# loaded_model = load_model(directory+ '/keras_models/' + model_name, custom_objects=custom_objects)
-
-loaded_model = load_model(directory+ '/keras_models/' + 'FTforGammaDome_latAmplified2.h5')
 
 def main(args):
   print("directory: ", directory)
@@ -111,7 +90,7 @@ def main(args):
   #========================== User Input================================================
   # engagePosition =  [-586e-3, 198e-3, 35e-3 - 004e-3]
   # engagePosition =  [-597e-3 - 001e-3, 200e-3, 118e-3]
-  engagePosition =  [-587e-3 + 5e-3, 81e-3, 35e-3 - 004e-3]     # for dome tilted
+  engagePosition =  [-586e-3 + 10e-3, 198e-3, 35e-3 - 004e-3]     # for dome tilted
   # engagePosition =  [-586e-3 + 30e-3, 198e-3, 35e-3 - 004e-3]   # for flat edge
   # engagePosition =  [-586e-3 + 29e-3, 198e-3, 35e-3 - 004e-3]   # for flat edge
   disengagePosition = engagePosition
@@ -163,8 +142,7 @@ def main(args):
   rtde_help = rtdeHelp(rtde_frequency)
   rospy.sleep(0.5)
   file_help = fileSaveHelp()
-  adpt_help = adaptMotionHelp(dP_threshold=12, dw = 0.5, d_lat = 0.5e-3, d_z = 0.2e-3)
-
+  adpt_help = adaptMotionHelp(dP_threshold=12, dw = 0.5, d_lat = 5e-3, d_z = 0.05e-3)
 
   # set tcp offset and calibration between tf and rtde
   rospy.sleep(0.5)
@@ -238,7 +216,8 @@ def main(args):
 
     # go to starting theta pose
     thetaIdx = 0
-    theta = 0 * pi/180
+    # theta = 0 * pi/180
+    theta = 30 * pi/180
     omega_hat1 = hat(np.array([1, 0, 0]))
     Rw1 = scipy.linalg.expm(theta * omega_hat1)
 
@@ -249,15 +228,16 @@ def main(args):
     Rw = np.dot(Rw1, Rw2)
 
     # L = 20e-3
-    # L = 8e-3
-    L = 0
-    # cx = L*np.sin(theta)
-    cx = 10e-3
-    # cx = -10e-3
-    # cx = 0
+    L = 8e-3
+    # L = 0
+    cx = L*np.sin(theta)
+    # cx = 5e-3
+    cx = 0
     cz = -L*np.cos(theta)
     # cz = 0
     T_from_tipContact = create_transform_matrix(Rw, [0.0, cx, cz])
+    T_offset = adpt_help.get_Tmat_TranlateInBodyF([0., 0., -15e-3]) # small offset from the target pose
+
 
     input("go to first big angle")
     targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_from_tipContact, tipContactPose)
@@ -273,45 +253,25 @@ def main(args):
     prevTime = 0
     P_vac = P_help.P_vac
 
+
     targetPoseStamped = copy.deepcopy(targetPose)
+    alpha = 0.5
 
     # START ADAPTIVE MOTION
     input("press enter for adaptive motion")
-    history = []
-    for i in range(800):
+    for i in range(1200):
       print(i)
 
-      farFlag = True
-      F_normal = FT_help.averageFz_noOffset
+      if alpha == 0:
+        rtde_help.stopAtCurrPose()
+      elif alpha == 1:
+        rtde_help.stopAtCurrPoseAdaptive()
 
-      # input('approach for Fz control')
-      while farFlag:
-        ic(F_normal)
-        rospy.sleep(0.01)
-        if F_normal > -F_normalThres[0]:
-          T_move = adpt_help.get_Tmat_TranlateInZ(direction = 1)
-          targetPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPoseStamped)
-          rtde_help.goToPoseAdaptive(targetPoseStamped, time = 0.1)
-
-          # new normal force
-          F_normal = FT_help.averageFz_noOffset
-
-        elif F_normal < -F_normalThres[1]:
-          T_move = adpt_help.get_Tmat_TranlateInZ(direction = -1)
-          targetPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPoseStamped)
-          rtde_help.goToPoseAdaptive(targetPoseStamped, time = 0.1)
-          
-          # new normal force
-          F_normal = FT_help.averageFz_noOffset
-
-        else:
-          farFlag = False
-          rtde_help.stopAtCurrPoseAdaptive()
-          # print("reached threshhold normal force: ", F_normal)
-          rospy.sleep(0.01)
-      
-      measuredCurrPose = rtde_help.getCurrentPose()
+      # 1. down to target pose
+      # rtde_help.stopAtCurrPoseAdaptive()
+      rtde_help.goToPose(targetPoseStamped, speed=0.3, acc=0.6)
       rospy.sleep(0.01)
+      # measuredCurrPose = rtde_help.getCurrentPose()
       
       # for alternating controller
       if time.time() - alternateTime > 0.5:
@@ -326,6 +286,7 @@ def main(args):
       T_array = [FT_help.averageTx_noOffset, FT_help.averageTy_noOffset]
       F_array = [FT_help.averageFx_noOffset, FT_help.averageFy_noOffset]
       F_normal = FT_help.averageFz_noOffset
+      FT_data = [[FT_help.averageFx_noOffset, FT_help.averageFy_noOffset, FT_help.averageFz_noOffset, FT_help.averageTx_noOffset, FT_help.averageTy_noOffset, FT_help.averageTz_noOffset]]
 
       # check force limits
       Fx = F_array[0]
@@ -333,7 +294,7 @@ def main(args):
       Fz = F_normal
       F_total = np.sqrt(Fx**2 + Fy**2 + Fz**2)
 
-      if F_total > 100:
+      if F_total > 20:
         print("net force acting on cup is too high")
 
         # stop at the last pose
@@ -347,7 +308,6 @@ def main(args):
       T_array_cup = adpt_help.get_T_array_cup(T_array, F_array, quat)
       # FT_data = np.concatenate((T_array, F_array))
       # FT_data = np.array([T_array, F_array])
-      FT_data = [[FT_help.averageFx_noOffset, FT_help.averageFy_noOffset, FT_help.averageFz_noOffset, FT_help.averageTx_noOffset, FT_help.averageTy_noOffset, FT_help.averageTz_noOffset]]
       # print("FT_data: ", FT_data)
 
       # calculate transformation matrices
@@ -378,15 +338,15 @@ def main(args):
       # T_later = np.eye(4)
 
 
-      T_align = np.eye(4)
-      T_later = np.eye(4)
+      # T_align = np.eye(4)
+      # T_later = np.eye(4)
 
-      # gamma = loaded_model.predict(FT_data)
-      # print("gamma: ", gamma[0])
-      # if gamma < 10:    # if gamma is less than 10, then use the lateral motion only
-      #   T_later = adpt_help.get_Tmat_lateralMove(P_array)
-      # else:            # if gamma is greater than 10, then use rotation only
-      #   T_align = adpt_help.get_Tmat_alignSuction(P_array)
+      # # gamma = loaded_model.predict(FT_data)
+      # # print("gamma: ", gamma[0])
+      # # if gamma < 10:    # if gamma is less than 10, then use the lateral motion only
+      # #   T_later = adpt_help.get_Tmat_lateralMove(P_array)
+      # # else:            # if gamma is greater than 10, then use rotation only
+      # #   T_align = adpt_help.get_Tmat_alignSuction(P_array)
 
       # dome = loaded_model.predict(FT_data)
       # print("dome: ", dome[0])
@@ -395,111 +355,128 @@ def main(args):
       # else:            # if curvature is greater than 10, then use rotation only
       #   T_align = adpt_help.get_Tmat_alignSuction(P_array)
 
+      # # print("T_align: ", T_align)
 
-      # weightVal = 1
-      # T_align = adpt_help.get_Tmat_alignSuction(P_array,weightVal=weightVal )
-      # T_later = adpt_help.get_Tmat_lateralMove(P_array, weightVal=1.0-weightVal)
+      # # weightVal = 1
+      # # T_align = adpt_help.get_Tmat_alignSuction(P_array,weightVal=weightVal )
+      # # T_later = adpt_help.get_Tmat_lateralMove(P_array, weightVal=1.0-weightVal)
 
-      # phi from ML model
-      # weightVal = 1
-      # prediction = loaded_model.predict(FT_data)
-      # ic(prediction[0])
-      # phi = -prediction[0] - 90
+      # T_normalMove = adpt_help.get_Tmat_axialMove(F_normal, F_normalThres)
+      # # T_normalMove = np.eye(4)
+      # T_move =  T_later @ T_align @ T_normalMove # lateral --> align --> normal
+      # # T_move =  T_align
+      # # T_move = np.eye(4)
 
-      # gamma and dome from ML model
-      weightVal = 1
-      predictions = loaded_model.predict(FT_data)
-      gamma = predictions[0]
-      dome = predictions[1]
+      # # move to new pose adaptively
+      # measuredCurrPose = rtde_help.getCurrentPose()
+      # currPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, measuredCurrPose)
+      # rtde_help.goToPoseAdaptive(currPose)
 
-      ic(gamma[0])
-      ic(dome[0])
+      farFlag = True
 
-      if gamma[0] < 25 and dome[0] < 25:
-        weightVal = 0
-        
-      elif gamma [0]> 25 and dome[0] < 25:
-        weightVal = 1
+      while farFlag:
+        ic(F_normal)
+        if F_normal > -F_normalThres[0]:
+          T_move = adpt_help.get_Tmat_TranlateInZ(direction = 1)
+          targetPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPoseStamped)
+          rtde_help.goToPoseAdaptive(targetPoseStamped, time = 0.1)
 
-      ic(weightVal)
-      T_align = adpt_help.get_Tmat_alignSuction(P_array,weightVal=weightVal )
-      T_later = adpt_help.get_Tmat_lateralMove(P_array, weightVal=1.0-weightVal)
+          # new normal force
+          F_normal = FT_help.averageFz_noOffset
 
-      
+        elif F_normal < -F_normalThres[1]:
+          T_move = adpt_help.get_Tmat_TranlateInZ(direction = -1)
+          targetPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPoseStamped)
+          rtde_help.goToPoseAdaptive(targetPoseStamped, time = 0.1)
+          
+          # new normal force
+          F_normal = FT_help.averageFz_noOffset
 
-      # phi from simple FT model
-      # weightVal = 1
-      if False:
-        ic(Fx)
-        ic(Fy)
-        phi = np.arctan2(Fy, Fx) * 180 / np.pi - 90
-        # phi = -(np.arctan2(Fy, Fx) * 180 / np.pi - 90)
-        ic(phi)
+        else:
+          farFlag = False
+          rtde_help.stopAtCurrPoseAdaptive()
+          print("reached threshhold normal force: ", F_normal)
+          rospy.sleep(0.1)
 
-        # ic(phi)
-        a = np.cos(phi * np.pi / 180.0)
-        b = np.sin(phi * np.pi / 180.0)
-        # a=1
-        # b=-1
-        ic(a)
-        ic(b)
-        dw = 0.5 * np.pi / 180.0
+      measuredCurrPose = rtde_help.getCurrentPose()
+      rospy.sleep(0.1)
 
-        P0, P1, P2, P3 = P_array
+      if True:
+        T_later, T_align, alpha = adpt_help.get_Tmats_from_ML_model(P_array, FT_data, loaded_model)
+        # alpha = 0
+        # alpha = 1
 
-        PW = (P3 + P2)/2
-        PE = (P1 + P0)/2
-        PN = (P1 + P2)/2
-        PS = (P0 + P3)/2
+        if True:
+          ic(Fx)
+          ic(Fy)
+          phi = np.arctan2(Fy, Fx) * 180 / np.pi - 90
+          # phi = -(np.arctan2(Fy, Fx) * 180 / np.pi - 90)
+          ic(phi)
 
-        # pressure differentials
-        dP_WE = PW - PE        # 0 deg
-        dP_SN = PS - PN
-        dP_rot_axis = np.array([dP_WE,dP_SN])
-        dP_norm = np.linalg.norm(dP_rot_axis)
+          # ic(phi)
+          a = -np.cos(phi * np.pi / 180.0)
+          b = -np.sin(phi * np.pi / 180.0)
+          # a=1
+          # b=-1
+          ic(a)
+          ic(b)
+          dw = 0.5 * np.pi / 180.0
 
+          P0, P1, P2, P3 = P_array
 
+          PW = (P3 + P2)/2
+          PE = (P1 + P0)/2
+          PN = (P1 + P2)/2
+          PS = (P0 + P3)/2
 
-        history.append((Fx, Fy))
-
-        if not 'fig' in locals():
-          fig, ax = plt.subplots(figsize=(8, 4))
-
-        # Clear the previous plot and create a new one
-        ax.clear()
-        ax.scatter(-Fy, -Fx, alpha=0.3, color='#FF0000', lw=2, ec='red')
-        ax.scatter(-b, -a, alpha=0.3, color='#FF0000', lw=1, ec='black')
-        ax.scatter(dP_WE/dP_norm, dP_SN/dP_norm, alpha=0.3, color='#FF0000', lw=1, ec='blue')
-
-        # lims = [0, 5]
-        # lims = [-1.5, 1.5]
-        ax.axvline(0, color='blue', linestyle='--', linewidth=1)
-        ax.axhline(0, color='blue', linestyle='--', linewidth=1)
-
-        # ax.plot(lims, lims, lw=1, color='#0000FF')
-        ax.ticklabel_format(useOffset=False, style='plain')
-        ax.tick_params(axis='both', which='major', labelsize=18)
-        # ax.set_xlim(lims)
-        # ax.set_ylim(lims)
-        ax.set_xlim([-1, 1])
-        ax.set_ylim([-1, 1])
-
-        ax.set_title(f'Loop i: {i}')
-
-        # Add a pause to allow the figure to update
-        plt.pause(0.01)
+          # pressure differentials
+          dP_WE = PW - PE        # 0 deg
+          dP_SN = PS - PN
+          dP_rot_axis = np.array([dP_WE,dP_SN])
+          dP_norm = np.linalg.norm(dP_rot_axis)
 
 
-        rot_axis = np.array([a,b,0])
-        norm = np.linalg.norm(rot_axis)
 
-        if norm == 0:
-              # skip to checking normal force and grasp condition
-              # continue
-              T = np.eye(4)
-              pass # it seems it should be pass rather than continue
+          # history.append((Fx, Fy))
 
-        else:     # if good, add 1 deg
+          if not 'fig' in locals():
+            fig, ax = plt.subplots(figsize=(8, 4))
+
+          # Clear the previous plot and create a new one
+          ax.clear()
+          ax.scatter(-Fy, -Fx, alpha=0.3, color='#FF0000', lw=2, ec='red')
+          ax.scatter(-b, -a, alpha=0.3, color='#FF0000', lw=1, ec='black')
+          ax.scatter(dP_WE/dP_norm, dP_SN/dP_norm, alpha=0.3, color='#FF0000', lw=1, ec='blue')
+
+          # lims = [0, 5]
+          # lims = [-1.5, 1.5]
+          ax.axvline(0, color='blue', linestyle='--', linewidth=1)
+          ax.axhline(0, color='blue', linestyle='--', linewidth=1)
+
+          # ax.plot(lims, lims, lw=1, color='#0000FF')
+          ax.ticklabel_format(useOffset=False, style='plain')
+          ax.tick_params(axis='both', which='major', labelsize=18)
+          # ax.set_xlim(lims)
+          # ax.set_ylim(lims)
+          ax.set_xlim([-1, 1])
+          ax.set_ylim([-1, 1])
+
+          ax.set_title(f'Loop i: {i}')
+
+          # Add a pause to allow the figure to update
+          # plt.pause(0.01)
+
+
+          rot_axis = np.array([a,b,0])
+          norm = np.linalg.norm(rot_axis)
+
+          if norm == 0:
+            # skip to checking normal force and grasp condition
+            # continue
+            T = np.eye(4)
+            pass # it seems it should be pass rather than continue
+
+          else:     # if good, add 1 deg
             rot_axis = rot_axis/norm
             # ic(rot_axis)
 
@@ -507,38 +484,52 @@ def main(args):
             # print("theta: ", theta)
 
             omega_hat = hat(rot_axis)
-            Rw = scipy.linalg.expm(weightVal* dw * omega_hat)
+            Rw = scipy.linalg.expm(alpha* dw * omega_hat)
 
             T = create_transform_matrix(Rw, [0,0,0])
-        
-        T_align = T
-        # ic(T_align)
+          
+          T_align = T
 
-      # controller_str = 'W5'
-      # T_align, T_later = adpt_help.get_Tmats_from_controller(P_array, T_array_cup, controller_str, PFlag)
+              
+        if alpha == 0:
+          ic(alpha)
+          # rtde_help.stopAtCurrPoseAdaptive()
 
-      T_normalMove = adpt_help.get_Tmat_axialMove(F_normal, F_normalThres)
-      # T_normalMove = np.eye(4)
-      T_move =  T_later @ T_align @ T_normalMove # lateral --> align --> normal
-      # T_move =  T_normalMove
-      # T_move =  T_align
-      # T_move = np.eye(4)
-      # ic(np.sqrt(Fx**2 + Fy**2))
-      # if np.sqrt(Fx**2 + Fy**2)<0.1:
-      #   T_move =  T_normalMove
+          # 3. lift up
+          targetSearchPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_offset, measuredCurrPose)
+          rtde_help.goToPose(targetSearchPoseStamped, speed=0.3, acc=0.6)
+          # rtde_help.goToPoseAdaptive(targetSearchPoseStamped, speed=0.3, acc=0.6)
+          rospy.sleep(0.1)
 
+          # 4. move to above the next search location
+          T_later = adpt_help.get_Tmat_lateralMove(P_array)
+          T_normalMove = adpt_help.get_Tmat_axialMove(F_normal, F_normalThres)
+          T_move =  T_later @ T_normalMove
 
-      # move to new pose adaptively
-      measuredCurrPose = rtde_help.getCurrentPose()
-      # currPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, measuredCurrPose)
-      # rtde_help.goToPoseAdaptive(currPose)
-      targetPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_move, measuredCurrPose)
-      targetSearchPoseStamped = copy.deepcopy(targetPoseStamped)
-      rtde_help.goToPoseAdaptive(targetSearchPoseStamped)
-      rospy.sleep(0.01)
+          # ic(T_later)
+
+          targetPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_move, measuredCurrPose)
+          targetSearchPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_offset, targetPoseStamped)
+          rtde_help.goToPose(targetSearchPoseStamped, speed=0.3, acc=0.6)
+          # rtde_help.goToPoseAdaptive(targetSearchPoseStamped, speed=0.3, acc=0.6)
+          rospy.sleep(0.01)
+          
+        elif alpha == 1:
+          ic(alpha)
+          # rtde_help.stopAtCurrPose()
+          
+
+          # 3. rotate about current location
+          T_normalMove = adpt_help.get_Tmat_axialMove(F_normal, F_normalThres)
+          T_move =  T_align @ T_normalMove
+
+          # ic(T_align)
+
+          targetPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_move, measuredCurrPose)
+          rtde_help.goToPoseAdaptive(targetPoseStamped)
+          rospy.sleep(0.01)
 
       reached_vacuum = all(np.array(P_array)<P_vac)
-
       if reached_vacuum:
         # vacuum seal formed, success!
         suctionSuccessFlag = True

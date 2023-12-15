@@ -20,7 +20,7 @@ from calendar import month_abbr
 import os, sys
 import string
 import matplotlib.pyplot as plt
-
+from matplotlib.animation import FuncAnimation
 
 from moveGroupInterface_Tae import MoveGroupInterface
 from scipy.io import savemat
@@ -74,32 +74,49 @@ from helperFunction.adaptiveMotion import adaptMotionHelp
 from helperFunction.gqcnn_policy_class import GraspProcessor
 from icecream import ic
 
-from keras.models import load_model
+import keras
 import keras.backend as kb
+from keras.models import Sequential
+from keras.models import load_model
+from keras.layers import Dense, BatchNormalization, Lambda
 
 def mse_angular(y_true, y_pred):
     y_true = float(y_true)
     return kb.mean(kb.square(kb.minimum(kb.abs(y_pred - y_true), 360 - kb.abs(y_pred - y_true))), axis=-1)
+
+directory = os.path.dirname(__file__)
 
 # model_name = 'FTforGamma.h5'
 # model_name = 'FTforGamma_latAmplified.h5'
 # model_name = 'FTforGamma_latAmplified2.h5'
 # model_name = 'FTforDomeCurvature_latAmplified2.h5'
 # model_name = 'FTforPhi_latAmplified2_20000.h5'
-directory = os.path.dirname(__file__)
+
 # loaded_model =  load_model(directory + '/keras_models/' + model_name, custom_objects={'mse_angular': mse_angular})
 
+output_scale = 360.0
+# custom_objects = {
+#     'mse_angular': mse_angular,
+#     'BatchNormalization': BatchNormalization,
+#     '<lambda>': lambda x: x * 360.0
+# }
+# model_name = 'FTforPhi_latAmplified2_10000_batchNormalization_sigmoid.h5'
+# loaded_model = load_model(directory+ '/keras_models/' + model_name, custom_objects=custom_objects)
+
+model_name = 'PforPhi_Data_amplified_thresh.h5'
+loaded_model = load_model(directory+ '/keras_models/' + model_name, custom_objects={'mse_angular': mse_angular})
+
+
+# loaded_model = load_model(directory+ '/keras_models/' + 'FTforGammaDome_latAmplified2.h5')
 
 def main(args):
-  # print("directory: ", directory)
-  # print("loaded_model: ", loaded_model)
+  print("directory: ", directory)
+  print("loaded_model: ", loaded_model)
 
   #========================== User Input================================================
   # engagePosition =  [-586e-3, 198e-3, 35e-3 - 004e-3]
   # engagePosition =  [-597e-3 - 001e-3, 200e-3, 118e-3]
-  # engagePosition =  [-586e-3 + 5e-3, 198e-3, 35e-3 - 004e-3]     # for dome tilted
-  # engagePosition =  [-587e-3 + 12e-3, 81e-3, 35e-3 - 004e-3]
-  engagePosition =  [-587e-3 + 19e-3, 81e-3 - 10e-3, 30e-3]
+  engagePosition =  [-587e-3 + 0e-3, 81e-3, 35e-3 - 004e-3]     # for dome tilted
   # engagePosition =  [-586e-3 + 30e-3, 198e-3, 35e-3 - 004e-3]   # for flat edge
   # engagePosition =  [-586e-3 + 29e-3, 198e-3, 35e-3 - 004e-3]   # for flat edge
   disengagePosition = engagePosition
@@ -118,7 +135,8 @@ def main(args):
   # F_normalThres = [50, 60]
   # F_normalThres = 1.5 #1
   Fz_tolerance = 0.1
-  args.domeRadius = 0
+  args.domeRadius = 99999
+  # args.domeRadius = 20
   #================================================================================================
   
   # CONSTANTS
@@ -152,6 +170,7 @@ def main(args):
   rospy.sleep(0.5)
   file_help = fileSaveHelp()
   adpt_help = adaptMotionHelp(dP_threshold=12, dw = 0.5, d_lat = 0.5e-3, d_z = 0.2e-3)
+
 
   # set tcp offset and calibration between tf and rtde
   rospy.sleep(0.5)
@@ -225,22 +244,24 @@ def main(args):
 
     # go to starting theta pose
     thetaIdx = 0
-    theta = 25 * pi/180
+    theta = 50 * pi/180
     omega_hat1 = hat(np.array([1, 0, 0]))
     Rw1 = scipy.linalg.expm(theta * omega_hat1)
 
-    phi = 0 * pi/180
+    phi0 = 0 * pi/180
     omega_hat2 = hat(np.array([0, 0, 1]))
-    Rw2 = scipy.linalg.expm(phi * omega_hat2)
+    Rw2 = scipy.linalg.expm(phi0 * omega_hat2)
 
     Rw = np.dot(Rw1, Rw2)
 
     # L = 20e-3
     # L = 8e-3
-    L = 0
-    cx = L*np.sin(theta)
-    # cx = 12e-3
-    # cx = 0
+    # L = 0
+    L = -5e-3
+    # cx = L*np.sin(theta)
+    # cx = 10e-3
+    # cx = -10e-3
+    cx = 0
     cz = -L*np.cos(theta)
     # cz = 0
     T_from_tipContact = create_transform_matrix(Rw, [0.0, cx, cz])
@@ -259,10 +280,45 @@ def main(args):
     prevTime = 0
     P_vac = P_help.P_vac
 
+    targetPoseStamped = copy.deepcopy(targetPose)
+
     # START ADAPTIVE MOTION
     input("press enter for adaptive motion")
-    for i in range(5000):
+    history = []
+    for i in range(300):
       print(i)
+
+      farFlag = True
+      F_normal = FT_help.averageFz_noOffset
+
+      # # input('approach for Fz control')
+      # while farFlag:
+      #   ic(F_normal)
+      #   rospy.sleep(0.05)
+      #   if F_normal > -F_normalThres[0]:
+      #     T_move = adpt_help.get_Tmat_TranlateInZ(direction = 1)
+      #     targetPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPoseStamped)
+      #     rtde_help.goToPoseAdaptive(targetPoseStamped, time = 0.1)
+
+      #     # new normal force
+      #     F_normal = FT_help.averageFz_noOffset
+
+      #   elif F_normal < -F_normalThres[1]:
+      #     T_move = adpt_help.get_Tmat_TranlateInZ(direction = -1)
+      #     targetPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPoseStamped)
+      #     rtde_help.goToPoseAdaptive(targetPoseStamped, time = 0.1)
+          
+      #     # new normal force
+      #     F_normal = FT_help.averageFz_noOffset
+
+      #   else:
+      #     farFlag = False
+      #     rtde_help.stopAtCurrPoseAdaptive()
+      #     # print("reached threshhold normal force: ", F_normal)
+      #     rospy.sleep(0.01)
+      
+      measuredCurrPose = rtde_help.getCurrentPose()
+      rospy.sleep(0.01)
       
       # for alternating controller
       if time.time() - alternateTime > 0.5:
@@ -301,114 +357,127 @@ def main(args):
       FT_data = [[FT_help.averageFx_noOffset, FT_help.averageFy_noOffset, FT_help.averageFz_noOffset, FT_help.averageTx_noOffset, FT_help.averageTy_noOffset, FT_help.averageTz_noOffset]]
       # print("FT_data: ", FT_data)
 
-      # calculate transformation matrices
-      # controller_str = 'FTR'
-      # T_align, T_later = adpt_help.get_Tmats_from_controller(P_array, T_array_cup, controller_str, PFlag)
-      
-      # T_align, T_later = adpt_help.get_Tmats_Suction(weightVal=1.0)
-      # T_align, T_later = adpt_help.get_Tmats_freeRotation(a=0, b=1)
-
-      # # get predicted phi from ML model
-      # # phi = i
-      # phi = loaded_model.predict(FT_data)
-      # # print("phi: ", phi)
-      # print("phi[0]: ", phi[0])
-
-      # # +/- 90 deg to go from v to omega
-      # phi_omega = (phi[0]+90) * pi/180
-
-      # # calculate a and b from phi
-      # a = -np.cos(phi[0])
-      # b = np.sin(phi[0])
-
-      # # a = -1
-      # # b = 0
-
-      # # T_align, T_later = adpt_help.get_Tmats_freeRotation(a, b)
-      # T_align = np.eye(4)
-      # T_later = np.eye(4)
-
 
       T_align = np.eye(4)
       T_later = np.eye(4)
 
-      # gamma = loaded_model.predict(FT_data)
-      # print("gamma: ", gamma[0])
-      # if gamma < 10:    # if gamma is less than 10, then use the lateral motion only
-      #   T_later = adpt_help.get_Tmat_lateralMove(P_array)
-      # else:            # if gamma is greater than 10, then use rotation only
-      #   T_align = adpt_help.get_Tmat_alignSuction(P_array)
-
-      # dome = loaded_model.predict(FT_data)
-      # print("dome: ", dome[0])
-      # if dome < 10:    # if curavture is less than 10, then use the lateral motion only
-      #   T_later = adpt_help.get_Tmat_lateralMove(P_array)
-      # else:            # if curvature is greater than 10, then use rotation only
-      #   T_align = adpt_help.get_Tmat_alignSuction(P_array)
-
-
-      # weightVal = 1
-      # T_align = adpt_help.get_Tmat_alignSuction(P_array,weightVal=weightVal )
-      # T_later = adpt_help.get_Tmat_lateralMove(P_array, weightVal=1.0-weightVal)
-
-      # weightVal = 0
-      # prediction = loaded_model.predict([P_array])
-      # phi = prediction[0]
-
-      # # weightVal = 1
-      # # prediction = loaded_model.predict(FT_data)
-      # # ic(prediction[0])
-      # # phi = -prediction[0] - 90
-      # # ic(phi)
-      # a = np.cos(phi)
-      # b = np.sin(phi)
-      # # ic(a)
-      # dw = .5 * np.pi / 180.0
-
-      # rot_axis = np.array([a,b,0])
-      # norm = np.linalg.norm(rot_axis)
-
-      # if norm == 0:
-      #       # skip to checking normal force and grasp condition
-      #       # continue
-      #       T = np.eye(4)
-      #       pass # it seems it should be pass rather than continue
-
-      # else:     # if good, add 1 deg
-      #     rot_axis = rot_axis/norm
-      #     # ic(rot_axis)
-
-      #     # publish the next target pose
-      #     # print("theta: ", theta)
-
-      #     omega_hat = hat(rot_axis)
-      #     Rw = scipy.linalg.expm(weightVal* dw * omega_hat)
-
-      #     T = create_transform_matrix(Rw, [0,0,0])
       
-      # T_align = T
+      # phi from simple FT model
+      weightVal = 1
+      if True:
+        ic(Fx)
+        ic(Fy)
+        phi = np.arctan2(Fy, Fx) * 180 / np.pi - 90
+        # phi = -(np.arctan2(Fy, Fx) * 180 / np.pi - 90)
+        ic(phi)
 
-      weightVal = 0.25
-      T_align = adpt_help.get_Tmat_alignSuction(P_array,weightVal=weightVal )
-      T_later = adpt_help.get_Tmat_lateralMove(P_array, weightVal=1.0-weightVal)
+        # ic(phi)
+        a = np.cos(phi * np.pi / 180.0)
+        b = np.sin(phi * np.pi / 180.0)
+        # a=1
+        # b=-1
+        ic(a)
+        ic(b)
+        dw = 0.5 * np.pi / 180.0
+
+        P0, P1, P2, P3 = P_array
+
+        PW = (P3 + P2)/2
+        PE = (P1 + P0)/2
+        PN = (P1 + P2)/2
+        PS = (P0 + P3)/2
+
+        # pressure differentials
+        dP_WE = PW - PE        # 0 deg
+        dP_SN = PS - PN
+        dP_rot_axis = np.array([dP_WE,dP_SN])
+        dP_norm = np.linalg.norm(dP_rot_axis)
+
+
+
+        history.append((Fx, Fy))
+
+        if not 'fig' in locals():
+          fig, ax = plt.subplots(figsize=(8, 4))
+
+        # Clear the previous plot and create a new one
+        ax.clear()
+        ax.scatter(-Fy, -Fx, alpha=0.3, color='#FF0000', lw=2, ec='red')
+        ax.scatter(-b, -a, alpha=0.3, color='#FF0000', lw=1, ec='black')
+        ax.scatter(dP_WE/dP_norm, dP_SN/dP_norm, alpha=0.3, color='#FF0000', lw=1, ec='blue')
+
+        # lims = [0, 5]
+        # lims = [-1.5, 1.5]
+        ax.axvline(0, color='blue', linestyle='--', linewidth=1)
+        ax.axhline(0, color='blue', linestyle='--', linewidth=1)
+
+        # ax.plot(lims, lims, lw=1, color='#0000FF')
+        ax.ticklabel_format(useOffset=False, style='plain')
+        ax.tick_params(axis='both', which='major', labelsize=18)
+        # ax.set_xlim(lims)
+        # ax.set_ylim(lims)
+        ax.set_xlim([-1, 1])
+        ax.set_ylim([-1, 1])
+
+        ax.set_title(f'Loop i: {i}')
+
+        # Add a pause to allow the figure to update
+        plt.pause(0.01)
+
+
+        rot_axis = np.array([a,b,0])
+        norm = np.linalg.norm(rot_axis)
+
+        if norm == 0:
+              # skip to checking normal force and grasp condition
+              # continue
+              T = np.eye(4)
+              pass # it seems it should be pass rather than continue
+
+        else:     # if good, add 1 deg
+            rot_axis = rot_axis/norm
+            # ic(rot_axis)
+
+            # publish the next target pose
+            # print("theta: ", theta)
+
+            omega_hat = hat(rot_axis)
+            Rw = scipy.linalg.expm(weightVal* dw * omega_hat)
+
+            T = create_transform_matrix(Rw, [0,0,0])
+        
+        T_align = T
+        # ic(T_align)
+
+      # controller_str = 'W5'
+      # T_align, T_later = adpt_help.get_Tmats_from_controller(P_array, T_array_cup, controller_str, PFlag)
 
       T_normalMove = adpt_help.get_Tmat_axialMove(F_normal, F_normalThres)
       # T_normalMove = np.eye(4)
       T_move =  T_later @ T_align @ T_normalMove # lateral --> align --> normal
+      T_move =  T_normalMove
       # T_move =  T_align
       # T_move = np.eye(4)
+      # ic(np.sqrt(Fx**2 + Fy**2))
+      # if np.sqrt(Fx**2 + Fy**2)<0.1:
+      #   T_move =  T_normalMove
+
 
       # move to new pose adaptively
       measuredCurrPose = rtde_help.getCurrentPose()
-      currPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, measuredCurrPose)
-      rtde_help.goToPoseAdaptive(currPose)
+      # currPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, measuredCurrPose)
+      # rtde_help.goToPoseAdaptive(currPose)
+      targetPoseStamped = adpt_help.get_PoseStamped_from_T_initPose(T_move, measuredCurrPose)
+      targetSearchPoseStamped = copy.deepcopy(targetPoseStamped)
+      rtde_help.goToPoseAdaptive(targetSearchPoseStamped)
+      rospy.sleep(0.01)
 
       reached_vacuum = all(np.array(P_array)<P_vac)
 
       if reached_vacuum:
         # vacuum seal formed, success!
         suctionSuccessFlag = True
-        # targetPWM_Pub.publish(DUTYCYCLE_0)
+        targetPWM_Pub.publish(DUTYCYCLE_0)
 
         print("Suction engage succeeded with controller")
 
@@ -643,9 +712,11 @@ def main(args):
 
     # save args
     args.Fz_set = F_normalThres
+    args.gamma = theta
+    args.phi = phi0
     # args.thetaList = np.array(thetaList)
     # file_help.saveDataParams(args, appendTxt='rotCharac')
-    file_help.saveDataParams(args, appendTxt='seb_testMLrotational_deleteMe')
+    file_help.saveDataParams(args, appendTxt='SDL_deleteMe')
     # file_help.saveDataParams(args, appendTxt='seb_rotational_'+'domeRadius_' + str(args.domeRadius) + '_gamma_' + str(args.gamma) + '_theta_' + str(args.theta))
     # file_help.saveDataParams(args, appendTxt='jp_lateral_'+'xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta))
     file_help.clearTmpFolder()
@@ -658,15 +729,12 @@ def main(args):
     dataLoggerEnable(False) # start data logging
     rospy.sleep(0.5)      
     P_help.stopSampling()
-    # targetPWM_Pub.publish(DUTYCYCLE_0)
+    targetPWM_Pub.publish(DUTYCYCLE_0)
     rospy.sleep(0.5)
 
     rospy.sleep(0.1)
     input("press enter to finish script")
     rtde_help.goToPose(disEngagePose)
-
-    rospy.sleep(2.0)
-    targetPWM_Pub.publish(DUTYCYCLE_0)
 
     # setOrientation = tf.transformations.quaternion_from_euler(pi,0,-pi/2 -pi,'sxyz') #static (s) rotating (r)
     # disEngagePose = rtde_help.getPoseObj(disengagePosition, setOrientation)

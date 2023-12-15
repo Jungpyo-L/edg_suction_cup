@@ -42,7 +42,7 @@ from scipy import signal
 
 from math import pi, cos, sin, floor
 
-
+# from helperFunction.SuctionP_callback_helper_ch6 import P_CallbackHelp #check channel number
 from helperFunction.SuctionP_callback_helper import P_CallbackHelp #check channel number
 from helperFunction.FT_callback_helper import FT_CallbackHelp
 from helperFunction.fileSaveHelper import fileSaveHelp
@@ -117,7 +117,7 @@ def main(args):
   
   # pose initialization
   xoffset = args.xoffset
-  disengagePosition_init =  [-0.593, .206, 0.025] # unit is in m
+  disengagePosition_init =  [-0.5925, .206, 0.016] # unit is in m
   if args.ch == 6:
     disengagePosition_init[2] += 0.02
   elif args.newCup == True:
@@ -201,18 +201,21 @@ def main(args):
 
     input("Press <Enter> to start to data collection")
     startAngleFlag = True
-    for j in range(xoffset, 16):
+    # for j in range(xoffset, 16):
+    for k in range(1, 7):
 
       print("Move to the upated disengage point")
       # add offset to the disengage position
-      args.xoffset = j
+      j = args.xoffset
+      args.zoffset = k
       # copy the initial disengage position without changing initial value
       disengagePosition = copy.deepcopy(disengagePosition_init)
+      disengagePosition[2] = disengagePosition_init[2] + 0.002
       print("disengagePosition: ", disengagePosition)
       disengagePosition[0] += j*0.001
       print("disengagePosition: ", disengagePosition)
       engagePosition = copy.deepcopy(disengagePosition)
-      engagePosition[2] = engage_z
+      engagePosition[2] = disengagePosition_init[2] - k*0.001
 
       for i in range(round(args.angle/5)+1):
 
@@ -244,6 +247,7 @@ def main(args):
         targetOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2+pi/36*i,'sxyz') #static (s) rotating (r)
         targetPose = rtde_help.getPoseObj(engagePosition, targetOrientation)
         rtde_help.goToPose(targetPose)
+        rospy.sleep(1)
         targetPWM_Pub.publish(DUTYCYCLE_100)
 
         # start data logging
@@ -281,7 +285,7 @@ def main(args):
         rospy.sleep(0.2)    
 
         # save data and clear the temporary folder
-        file_help.saveDataParams(args, appendTxt='jp_lateral_'+'xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta))
+        file_help.saveDataParams(args, appendTxt='jp_lateral_'+'xoffset_' + str(args.xoffset)+'_zoffset_' + str(args.zoffset)+'_theta_' + str(args.theta))
         file_help.clearTmpFolder()
         P_help.stopSampling()
         rospy.sleep(0.3) # default is 0.5
@@ -330,6 +334,7 @@ if __name__ == '__main__':
   parser.add_argument('--storedDataDirectory', type=str, help='location of target saved File', default="")
   parser.add_argument('--startIdx', type=int, help='startIndex Of the pose List', default= 0)
   parser.add_argument('--xoffset', type=int, help='x direction offset', default= 0)
+  parser.add_argument('--zoffset', type=int, help='z direction offset (suction cup displacement)', default= 0)
   parser.add_argument('--angle', type=int, help='angles of exploration', default= 360)
   parser.add_argument('--startAngle', type=int, help='angles of exploration', default= 0)
   parser.add_argument('--primitives', type=str, help='types of primitives (edge, corner, etc.)', default= "edge")
