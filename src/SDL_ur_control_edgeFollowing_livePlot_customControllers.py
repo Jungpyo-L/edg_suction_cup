@@ -96,15 +96,19 @@ def main(args):
   d_z = 0.02e-3
   dP_threshold = 10
   P_lim_upper = 400
-  P_lim_lower = 200
-  correction_scale = 0.15
+  P_lim_lower = 300
+  P_noise = 20
+  P_grasp = 15000
+  y_intercept = 1.5
+
+  # correction_scale = 0.15
 
   #========================== User Input================================================
   # engagePosition =  [-586e-3, 198e-3, 35e-3 - 004e-3]
   # engagePosition =  [-597e-3 - 001e-3, 200e-3, 118e-3]
-  # engagePosition =  [-574e-3, 90e-3, 15e-3]     # for dome tilted
-  # engagePosition =  [-574e-3 -66e-3, 90e-3, 15e-3]     # for dome tilted
+  # engagePosition =  [-574e-3 -32e-3, 90e-3, 15e-3]     # for dome tilted
   engagePosition =  [-605e-3, 93e-3, 15e-3]   # hard coded circle
+  # engagePosition =  [-574e-3 -66e-3, 90e-3, 15e-3]     # for dome tilted
   # engagePosition =  [-586e-3 + 30e-3, 198e-3, 35e-3 - 004e-3]   # for flat edge
   # engagePosition =  [-586e-3 + 29e-3, 198e-3, 35e-3 - 004e-3]   # for flat edge
   disengagePosition = engagePosition
@@ -229,9 +233,10 @@ def main(args):
     # cx = L*np.sin(theta)
     # cx = 6e-3
     # cx = 13e-3
+    # cx = 17e-3
     # cx = -10e-3
     # cx = 0
-    cx = 32e-3
+    cx = 35e-3
     # cz = -L*np.cos(theta)
     cz = 0
     T_from_tipContact = create_transform_matrix(Rw, [0.0, cx, cz])
@@ -407,12 +412,30 @@ def main(args):
       P_mean_log10 = np.log10(P_mean)
       # ic(P_mean_log10)
 
-      # sum of direction vector and correction vector
-      # correction_scale = P_mean_log10 / 4
-      # correction_scale = 0.65
-      r_p_final = r_p + corr_p * correction_scale
+      # values for calculating correction scale
+      xs = np.linspace(P_noise, P_grasp, P_grasp+1)
+      ys = np.zeros_like(xs)
+      ys[xs >= P_lim_upper] = np.log10(xs[xs >= P_lim_upper]) - np.log10(P_lim_upper)
+      ratio_ul = ys[xs == P_grasp]/y_intercept
+      ys[xs <= P_lim_lower] = np.abs(np.log10(xs[xs < P_lim_lower]) - np.log10(P_lim_lower))
+      ratio_ll = ys[xs == P_noise]/y_intercept
+
+      # calculating correction scale
+      if P_mean > P_lim_upper:
+        correction_scale = P_mean_log10 - np.log10(P_lim_upper)
+        correction_scale = correction_scale /ratio_ul
+      elif P_mean < P_lim_lower:
+        correction_scale = abs(P_mean_log10 - np.log10(P_lim_lower))
+        correction_scale = correction_scale /ratio_ll
+      else:
+        correction_scale = 0
 
       ic(correction_scale)
+
+      # sum of direction vector and correction vector
+      r_p_final = r_p + corr_p * correction_scale
+
+      # ic(correction_scale)
 
       if False:
         prediction = loaded_model.predict([P_array])
@@ -442,6 +465,7 @@ def main(args):
       # if np.sqrt(Fx**2 + Fy**2)<0.1:
       #   T_move =  T_normalMove
 
+      # ic(measuredCurrPose)
       xi = measuredCurrPose.pose.position.x
       yi = measuredCurrPose.pose.position.y
 
