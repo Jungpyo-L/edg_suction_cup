@@ -92,12 +92,12 @@ loaded_model = load_model(directory+ '/keras_models/' + model_name, custom_objec
 def main(args):
   #========================== Edge Following knobs to tune =============================
 
-  d_lat = 0.50e-3
+  d_lat = 4.5e-3
   d_z = 0.02e-3
   dP_threshold = 10
   P_lim_upper = 400
-  P_lim_lower = 300
-  P_noise = 20
+  P_lim_lower = 200
+  P_noise = 10
   P_grasp = 15000
   y_intercept = 1.5
 
@@ -107,7 +107,7 @@ def main(args):
   # engagePosition =  [-586e-3, 198e-3, 35e-3 - 004e-3]
   # engagePosition =  [-597e-3 - 001e-3, 200e-3, 118e-3]
   # engagePosition =  [-574e-3 -32e-3, 90e-3, 15e-3]     # for dome tilted
-  engagePosition =  [-605e-3, 93e-3, 15e-3]   # hard coded circle
+  engagePosition =  [-605e-3, 98e-3, 15e-3]   # hard coded circle
   # engagePosition =  [-574e-3 -66e-3, 90e-3, 15e-3]     # for dome tilted
   # engagePosition =  [-586e-3 + 30e-3, 198e-3, 35e-3 - 004e-3]   # for flat edge
   # engagePosition =  [-586e-3 + 29e-3, 198e-3, 35e-3 - 004e-3]   # for flat edge
@@ -236,7 +236,7 @@ def main(args):
     # cx = 17e-3
     # cx = -10e-3
     # cx = 0
-    cx = 35e-3
+    cx = 33e-3
     # cz = -L*np.cos(theta)
     cz = 0
     T_from_tipContact = create_transform_matrix(Rw, [0.0, cx, cz])
