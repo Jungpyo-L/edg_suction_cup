@@ -71,7 +71,7 @@ def main(args):
   
   distance = calculate_distance(disengagePosition_init, disEngagePose)
 
-  #subscribing to receive pose actively
+  #subscribing to receive pose active
   # data = rtdeHelp.receive()
   # #looking for the real time pose
   # rPose = data.actual_tool_pose
