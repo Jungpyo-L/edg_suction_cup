@@ -130,6 +130,12 @@ class rtdeHelp(object):
         # acc = self.acc
         self.rtde_c.moveL(targetPose, speed, acc, asynchronous)
         
+    # def goToPose2(self, goalPose, speed = 0.25, acc = 1.2, mode=1):
+    #     pose = self.getTransformedPose(goalPose)
+    #     targetPose = self.getTCPPose(pose)
+    #     # speed = self.speed
+    #     # acc = self.acc
+    #     self.rtde_c.movec(pose, targetPose, acc, speed, r =0, mode) #circular motion in tool-space
 
     # def goToPose(self, goalPose, speed = 0.05, acc = 0.01,  timeCoeff = 10, lookahead_time = 0.1, gain = 200.0):
     #     # lookahead_time range [0.03 0.2]

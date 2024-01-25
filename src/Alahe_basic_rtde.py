@@ -84,7 +84,7 @@ def main(args):
     rtde_help.goToPose(disEngagePose)  #goes to the pose, in attempt to make a second attempt creates roundoff error
     # rtde_help.goToPoseAdaptive(disEngagePose)
     rospy.sleep(0.1)
-    #displaying the distance at each step
+    #displaying the distance at each step 
     
     while not distance <0.01: 
       current_pose = rtde_help.getTCPPose(disEngagePose) #attempt to get updated pose as the UR10 is moving
