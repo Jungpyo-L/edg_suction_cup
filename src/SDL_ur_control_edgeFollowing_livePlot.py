@@ -104,7 +104,7 @@ def main(args):
   # engagePosition =  [-597e-3 - 001e-3, 200e-3, 118e-3]
   # engagePosition =  [-574e-3, 90e-3, 15e-3]     # for dome tilted
   # engagePosition =  [-574e-3 -66e-3, 90e-3, 15e-3]     # for dome tilted
-  engagePosition =  [-605e-3, 98e-3, 15e-3]   # hard coded circle
+  engagePosition =  [-611e-3, 98e-3, 15e-3]   # hard coded circle
   # engagePosition =  [-586e-3 + 30e-3, 198e-3, 35e-3 - 004e-3]   # for flat edge
   # engagePosition =  [-586e-3 + 29e-3, 198e-3, 35e-3 - 004e-3]   # for flat edge
   disengagePosition = engagePosition
@@ -296,6 +296,7 @@ def main(args):
     # history_edgeFollowing = []
     for i in range(80000):
       # print(i)
+      prevTime = time.time()
 
       farFlag = True
       F_normal = FT_help.averageFz_noOffset
@@ -522,6 +523,10 @@ def main(args):
         # keep X sec of data after alignment is complete
         rospy.sleep(0.1)
         break
+
+      presentTime = time.time()
+      elapsedTime = presentTime - prevTime
+      ic(elapsedTime)
 
 
     ###################################

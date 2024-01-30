@@ -57,7 +57,7 @@ def main(args):
 
   
   # pose initialization
-  disengagePosition_init =  [-0.597, .211, 0.025] # unit is in m
+  disengagePosition_init =  [-0.597, .221, 0.050] # unit is in m
   setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
   disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
 
@@ -67,6 +67,8 @@ def main(args):
     # Go to disengage Pose
     input("Press <Enter> to go disEngagePose")
     rtde_help.goToPose(disEngagePose)
+    print(rtde_help.getCurrentPose())
+    
     rospy.sleep(0.1)
 
     print("============ Python UR_Interface demo complete!")

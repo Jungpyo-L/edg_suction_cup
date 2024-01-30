@@ -13,7 +13,7 @@ class P_CallbackHelp(object):
         self.IDLE_CMD = 3
         self.RECORD_CMD = 10
         self.msg2Sensor = cmdPacket()
-        self.P_vac = -15000.0
+        self.P_vac = -10000.0
         # self.P_vac = -20000.0
 
         self.sensorCMD_Pub = rospy.Publisher('cmdPacket', cmdPacket, queue_size=10)

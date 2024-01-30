@@ -117,7 +117,7 @@ def main(args):
   
   # pose initialization
   xoffset = args.xoffset
-  disengagePosition_init =  [-0.593, .206, 0.025] # unit is in m
+  disengagePosition_init =  [-0.5923, .210, 0.025] # unit is in m
   if args.ch == 6:
     disengagePosition_init[2] += 0.02
   elif args.newCup == True:
@@ -214,18 +214,18 @@ def main(args):
 
       print("Move to the upated disengage point")
       # add offset to the disengage position
-      args.xoffset = j
+      args.xoffset = j/10.0
       # copy the initial disengage position without changing initial value
       disengagePosition = copy.deepcopy(disengagePosition_init)
       print("disengagePosition: ", disengagePosition)
-      disengagePosition[0] += j*0.001 # make it in mm unit
+      disengagePosition[0] += args.xoffset *0.001 # make it in mm unit
       print("disengagePosition: ", disengagePosition)
       engagePosition = copy.deepcopy(disengagePosition)
       engagePosition[2] = engage_z
 
       for i in range(round(args.angle/5)+1):
 
-        print("offset: ", j)
+        print("offset: ", args.xoffset)
         print("Pose Idx: ", i)
         args.theta = round((pi/36*i)*180/pi)
         print("Theta =", args.theta)
@@ -246,7 +246,7 @@ def main(args):
 
         # set pressure and FT offset
         P_help.startSampling()      
-        rospy.sleep(0.3) # default is 0.5
+        rospy.sleep(0.5) # default is 0.5
         P_help.setNowAsOffset()
 
         # Go to engage Pose
@@ -269,14 +269,15 @@ def main(args):
         # P_init[1] = P_init[0] # for the case of channel 3 suction cup
         # P_init[1] = P_init[0] # for the case of channel 2 suction cup
         # P_init[3] = P_init[2] # for the case of channel 2 suction cup
-        if all(np.array(P_init)<P_vac) and i == 0 and j != 7:
-          print("Suction Engage Succeed from initial touch")
-          SuctionFlag = True
-        else:
-          SuctionFlag = False
-        if args.ch == 6:
-          if j<7:
-            SuctionFlag = True
+        # if all(np.array(P_init)<P_vac) and i == 0 and j != 7:
+        #   print("Suction Engage Succeed from initial touch")
+        #   SuctionFlag = True
+        # else:
+        #   SuctionFlag = False
+        # if args.ch == 6:
+        #   if j<7:
+        #     SuctionFlag = True
+        SuctionFlag = False
         print("Stop to record data")
         syncPub.publish(SYNC_STOP)
         rospy.sleep(0.1)

@@ -89,25 +89,67 @@ output_scale = 360.0
 model_name = 'PforPhi_Data_amplified_thresh.h5'
 loaded_model = load_model(directory+ '/keras_models/' + model_name, custom_objects={'mse_angular': mse_angular})
 
+def line_parameters(P_alpha, alpha, P_beta, beta):
+    A = np.array([[np.log10(P_beta), 1], [np.log10(P_alpha), 1]])
+    B = np.array([beta, alpha])
+    
+    # Solve the system of linear equations
+    solution = np.linalg.solve(A, B)
+    
+    # Extract parameters m and b from the solution
+    m, b = solution
+    
+    return m, b
+
 def main(args):
   #========================== Edge Following knobs to tune =============================
 
-  d_lat = 4.5e-3
-  d_z = 0.02e-3
-  dP_threshold = 10
-  P_lim_upper = 400
-  P_lim_lower = 200
-  P_noise = 10
-  P_grasp = 15000
-  y_intercept = 1.5
+  d_lat = 3.0e-3
 
-  # correction_scale = 0.15
+  P_n = 10
+  P_ll = 100
+  P_ul = 120
+  P_g = 15000
+
+  # # Controller Z: cf = 0.0
+  # alpha1 = 0.0
+  # beta1 = alpha1
+  # alpha2 = alpha1
+  # beta2 = alpha1
+
+  # # Controller A: cf = 0.65
+  # alpha1 = 0.65
+  # beta1 = alpha1
+  # alpha2 = alpha1
+  # beta2 = alpha1
+
+  # # Controller B: similar to log10(P)/4
+  # alpha1 = 0.65
+  # beta1 = 1.05
+  # alpha2 = alpha1
+  # beta2 = beta1
+
+  # # controller C
+  # alpha1 = 0.0
+  # beta1 = 0.9
+  # alpha2 = 0.0
+  # beta2 = 0.9
+
+  # controller D
+  alpha1 = 0.0
+  beta1 = 1.0
+  alpha2 = 0.0
+  beta2 = 1.5
+
+  d_z = 0.02e-3
 
   #========================== User Input================================================
   # engagePosition =  [-586e-3, 198e-3, 35e-3 - 004e-3]
   # engagePosition =  [-597e-3 - 001e-3, 200e-3, 118e-3]
   # engagePosition =  [-574e-3 -32e-3, 90e-3, 15e-3]     # for dome tilted
-  engagePosition =  [-605e-3, 98e-3, 15e-3]   # hard coded circle
+  # engagePosition =  [-636e-3, 98e-3, 15e-3]   # hard coded circle
+  engagePosition =  [-611e-3 + 147e-3, 98e-3, 25e-3]   # for square edge
+  # engagePosition =  [-611e-3 + 147e-3, 98e-3, 25e-3 + 60e-3]   # for square edge
   # engagePosition =  [-574e-3 -66e-3, 90e-3, 15e-3]     # for dome tilted
   # engagePosition =  [-586e-3 + 30e-3, 198e-3, 35e-3 - 004e-3]   # for flat edge
   # engagePosition =  [-586e-3 + 29e-3, 198e-3, 35e-3 - 004e-3]   # for flat edge
@@ -117,11 +159,21 @@ def main(args):
 
   # controller_str = "W1"
 
-  F_normalThres = [1.5, 1.6]
+  # F_normalThres = [1.5, 1.6]
+  F_normalThres = [1.1, 1.2]
   # F_normalThres = [50, 60]
   # F_normalThres = 1.5 #1
   Fz_tolerance = 0.1
   args.domeRadius = 99999
+
+  dP_threshold = 10
+  P_lim_upper = 400
+  P_lim_lower = 200
+  P_noise = 10
+  P_grasp = 15000
+  y_intercept = 1.5
+  correction_scale = 0.15
+
   #================================================================================================
     # CONSTANTS
   rtde_frequency = 125
@@ -299,9 +351,12 @@ def main(args):
 
     edgeFollowing_history = []
     # history_edgeFollowing = []
+
+    
     for i in range(80000):
       # print(i)
-
+      prevTime = time.time()
+      
       farFlag = True
       F_normal = FT_help.averageFz_noOffset
 
@@ -402,35 +457,47 @@ def main(args):
       # flip correction vector depending on absolute pressure reading
       # ic(np.mean(P_array))
       # ic(max(dP_WE,dP_SN))
-      if abs(np.mean(P_array)) > P_lim_upper:
+      if abs(np.mean(P_array)) > P_ul:
         corr_p = -corr_p
       
-      if abs(np.mean(P_array)) < P_lim_upper and abs(np.mean(P_array)) > P_lim_lower:
+      if abs(np.mean(P_array)) < P_ul and abs(np.mean(P_array)) > P_ll:
         corr_p = np.zeros(2)
 
       P_mean = abs(np.mean(P_array))
       P_mean_log10 = np.log10(P_mean)
       # ic(P_mean_log10)
 
-      # values for calculating correction scale
-      xs = np.linspace(P_noise, P_grasp, P_grasp+1)
-      ys = np.zeros_like(xs)
-      ys[xs >= P_lim_upper] = np.log10(xs[xs >= P_lim_upper]) - np.log10(P_lim_upper)
-      ratio_ul = ys[xs == P_grasp]/y_intercept
-      ys[xs <= P_lim_lower] = np.abs(np.log10(xs[xs < P_lim_lower]) - np.log10(P_lim_lower))
-      ratio_ll = ys[xs == P_noise]/y_intercept
+      # # values for calculating correction scale
+      # xs = np.linspace(P_noise, P_grasp, P_grasp+1)
+      # ys = np.zeros_like(xs)
+      # ys[xs >= P_lim_upper] = np.log10(xs[xs >= P_lim_upper]) - np.log10(P_lim_upper)
+      # ratio_ul = ys[xs == P_grasp][0]/y_intercept
+      # ys[xs <= P_lim_lower] = np.abs(np.log10(xs[xs < P_lim_lower]) - np.log10(P_lim_lower))
+      # ratio_ll = ys[xs == P_noise]/y_intercept
 
+      # # calculating correction scale
+      # if P_mean > P_lim_upper:
+      #   correction_scale = P_mean_log10 - np.log10(P_lim_upper)
+      #   correction_scale = correction_scale /ratio_ul
+      # elif P_mean < P_lim_lower:
+      #   correction_scale = abs(P_mean_log10 - np.log10(P_lim_lower))
+      #   correction_scale = correction_scale /ratio_ll
+      # else:
+      #   correction_scale = 0
+
+      
       # calculating correction scale
-      if P_mean > P_lim_upper:
-        correction_scale = P_mean_log10 - np.log10(P_lim_upper)
-        correction_scale = correction_scale /ratio_ul
-      elif P_mean < P_lim_lower:
-        correction_scale = abs(P_mean_log10 - np.log10(P_lim_lower))
-        correction_scale = correction_scale /ratio_ll
+      m1, b1 = line_parameters(P_ul, alpha1, P_g, beta1)
+      m2, b2 = line_parameters(P_ll, alpha2, P_n, beta2)
+      if P_mean > P_ul:
+        correction_scale = m1 * P_mean_log10 + b1
+      elif P_mean < P_ll:
+        correction_scale = m2 * P_mean_log10 + b2
       else:
         correction_scale = 0
 
-      ic(correction_scale)
+      ic(np.round(correction_scale, 3))
+      ic(np.round(P_mean, 3))
 
       # sum of direction vector and correction vector
       r_p_final = r_p + corr_p * correction_scale
@@ -473,6 +540,9 @@ def main(args):
       edgeFollowing_history.append([currentTime, xi, yi, r_p, corr_p, r_p_final, F_normal, *P_array])
       # history_edgeFollowing.append([timei, thti, xi, yi, F_normal, *P_array])
 
+
+
+
       if not 'fig' in locals():
         fig, ax = plt.subplots(figsize=(8, 4))
 
@@ -505,6 +575,8 @@ def main(args):
 
       # Add a pause to allow the figure to update
       plt.pause(0.01)
+
+
 
 
       # move to new pose adaptively
@@ -545,6 +617,10 @@ def main(args):
         # keep X sec of data after alignment is complete
         rospy.sleep(0.1)
         break
+
+      presentTime = time.time()
+      elapsedTime = presentTime - prevTime
+      # ic(np.round(elapsedTime, 3))
 
 
     ###################################
