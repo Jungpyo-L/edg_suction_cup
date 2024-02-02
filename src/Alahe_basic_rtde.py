@@ -64,23 +64,6 @@ def main(args):
   disengagePosition_init =  [-0.597, .221, 0.050] # unit is in m
   setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
   disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
-=======
-  disengagePosition_init =  [-0.597, .211, 0.025] # unit is in m
-  setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r), the orientaiton/frame of the trajec
-  disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation) 
-
-  def calculate_distance(current_position, target_position):
-    return ((current_position[0] - target_position[0])**2 +
-            (current_position[1] - target_position[1])**2 +
-            (current_position[2] - target_position[2])**2) ** 0.5
-  
-  distance = calculate_distance(disengagePosition_init, disEngagePose)
-
-  #subscribing to receive pose active
-  # data = rtdeHelp.receive()
-  # #looking for the real time pose
-  # rPose = data.actual_tool_pose
->>>>>>> f154713899f718986e8604445e4936e127d2b76e
 
 
   # try block so that we can have a keyboard exception
