@@ -104,11 +104,11 @@ def line_parameters(P_alpha, alpha, P_beta, beta):
 def main(args):
   #========================== Edge Following knobs to tune =============================
 
-  d_lat = 3.0e-3
+  d_lat = 0.50e-3
 
   P_n = 10
-  P_ll = 100
-  P_ul = 120
+  P_ll = 90
+  P_ul = 90
   P_g = 15000
 
   # # Controller Z: cf = 0.0
@@ -148,7 +148,7 @@ def main(args):
   # engagePosition =  [-597e-3 - 001e-3, 200e-3, 118e-3]
   # engagePosition =  [-574e-3 -32e-3, 90e-3, 15e-3]     # for dome tilted
   # engagePosition =  [-636e-3, 98e-3, 15e-3]   # hard coded circle
-  engagePosition =  [-611e-3 + 147e-3, 98e-3, 25e-3]   # for square edge
+  engagePosition =  [-611e-3 + 147e-3, 98e-3, 20e-3]   # for square edge
   # engagePosition =  [-611e-3 + 147e-3, 98e-3, 25e-3 + 60e-3]   # for square edge
   # engagePosition =  [-574e-3 -66e-3, 90e-3, 15e-3]     # for dome tilted
   # engagePosition =  [-586e-3 + 30e-3, 198e-3, 35e-3 - 004e-3]   # for flat edge
@@ -160,7 +160,9 @@ def main(args):
   # controller_str = "W1"
 
   # F_normalThres = [1.5, 1.6]
-  F_normalThres = [1.1, 1.2]
+  # F_normalThres = [1.1, 1.2]
+  F_normalThres = [0.9, 1.0]
+  # F_normalThres = [0.6, 0.9]
   # F_normalThres = [50, 60]
   # F_normalThres = 1.5 #1
   Fz_tolerance = 0.1

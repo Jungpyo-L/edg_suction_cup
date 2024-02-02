@@ -37,6 +37,10 @@ from math import pi, cos, sin
 from helperFunction.rtde_helper import rtdeHelp
 from helperFunction.adaptiveMotion import adaptMotionHelp
 
+def calculate_distance(current_position, target_position):
+    return ((current_position[0] - target_position[0])**2 +
+            (current_position[1] - target_position[1])**2 +
+            (current_position[2] - target_position[2])**2) ** 0.5
 
 def main(args):
 
@@ -60,24 +64,35 @@ def main(args):
 
   
   # pose initialization
-<<<<<<< HEAD
-  disengagePosition_init =  [-0.597, .221, 0.050] # unit is in m
-  setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
-  disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
+  disengagePosition_init =  [-0.597, .211, 0.025] # unit is in m
+  setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r), the orientaiton/frame of the trajec
+  disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation) 
+
+
+  disengagePosition_init2 =  [-0.597, .211, 0.225] # unit is in m
+  setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r), the orientaiton/frame of the trajec
+  disEngagePose2 = rtde_help.getPoseObj(disengagePosition_init2, setOrientation) 
+
+  
+  print("disEngagePose: ",  disEngagePose.pose.position)
+  target = [disEngagePose.pose.position.x,  disEngagePose.pose.position.y,  disEngagePose.pose.position.z]
+  
+  distance = calculate_distance(disengagePosition_init, target)
+
+  #subscribing to receive pose active
+  # data = rtdeHelp.receive()
+  # #looking for the real time pose
+  # rPose = data.actual_tool_pose
 
 
   # try block so that we can have a keyboard exception
   try:
     # Go to disengage Pose
     input("Press <Enter> to go disEngagePose")
-<<<<<<< HEAD
     rtde_help.goToPose(disEngagePose)
     print(rtde_help.getCurrentPose())
     
-=======
-    rtde_help.goToPose(disEngagePose)  #goes to the pose, in attempt to make a second attempt creates roundoff error
     # rtde_help.goToPoseAdaptive(disEngagePose)
->>>>>>> f154713899f718986e8604445e4936e127d2b76e
     rospy.sleep(0.1)
     #displaying the distance at each step 
     
@@ -89,6 +104,11 @@ def main(args):
     
     print("Calcualted distance is: ", distance)
     print("============ Python UR_Interface demo complete!")
+
+    rtde_help.goToPose(disEngagePose2)
+
+
+
 
     
   

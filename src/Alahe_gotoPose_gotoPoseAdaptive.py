@@ -132,6 +132,7 @@ def main(args):
       print("tilt: ", tilt)
       setOrientation = tf.transformations.quaternion_from_euler(pi+args.tilt*pi/180,0,pi/2,'sxyz') #static (s) rotating (r)
       disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
+      ################3 GO to POse
       rtde_help.goToPose(disEngagePose)
       rospy.sleep(0.3)
       P_help.startSampling()      
@@ -164,6 +165,7 @@ def main(args):
           if F_normal > -args.normalForce:
             T_move = adpt_help.get_Tmat_TranlateInZ(direction = 1)
             targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPose)
+            #########33 Goto pose adaptive #######
             rtde_help.goToPoseAdaptive(targetPose, time = 0.1)
             F_normal = FT_help.averageFz_noOffset
             args.normalForceActual = F_normal
