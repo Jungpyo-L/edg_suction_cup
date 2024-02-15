@@ -119,6 +119,19 @@ class rtdeHelp(object):
         z = pose.pose.position.z
         Rx, Ry, Rz = self.getRotVector(pose)
         return [x, y, z, Rx, Ry, Rz]
+    
+    def getTCPForce(self): # gets (Force/Torque vector) at the TCP
+        wrench=self.rtde_r.getActualTCPForce()
+        F_x=wrench[0]
+        F_y=wrench[1]
+        F_z=wrench[2]
+        F_m=np.sqrt(F_x**2+F_y**2+F_z**2) #magnitude of forces
+        mass=F_m/9.81 #convert to kg
+        return [F_x, F_y, F_z, F_m, mass]
+    
+    def setPayload(self, payload, CoG):
+        # Assuming method is avalible within RTDEControlInterface
+        self.rtde_c.set_payload(payload, CoG)
 
     def goToPositionOrientation(self, goalPosition, setOrientation, asynchronous = False):
         self.goToPose(self.getPoseObj(goalPosition, setOrientation))
@@ -130,12 +143,25 @@ class rtdeHelp(object):
         # acc = self.acc
         self.rtde_c.moveL(targetPose, speed, acc, asynchronous)
         
-    # def goToPose2(self, goalPose, speed = 0.25, acc = 1.2, mode=1):
-    #     pose = self.getTransformedPose(goalPose)
-    #     targetPose = self.getTCPPose(pose)
-    #     # speed = self.speed
-    #     # acc = self.acc
-    #     self.rtde_c.movec(pose, targetPose, acc, speed, r =0, mode) #circular motion in tool-space
+    def goToPose2(self, goalPose, speed=0.4, acc=0.2, time=0.1, lookahead_time=0.5, gain=300):
+        pose = self.getTransformedPose(goalPose)
+        targetPose = self.getTCPPose(pose)
+        speed= self.speed
+        # task_frame = [0, 0, 0, 0, 0, 0]
+        # selection_vector = [0, 0, 1, 0, 0, 0]
+        # wrench_down = [0, 0, -1, 0, 0, 0]
+        # wrench_up = [0, 0, 1, 0, 0, 0]
+        # force_type = 2
+        # limits = [2, 2, 1.5, 1, 1, 1]
+        # dt = 1.0/500  # 2ms
+        # joint_q = [-1.54, -1.83, -2.28, -0.59, 1.60, 0.023]
+
+        # Move to initial joint position with a regular moveJ
+        self.rtde_c.moveL(targetPose, speed, acc, time, lookahead_time, gain)
+        # rospy.sleep(0.2)
+        # self.rtde_c.forceMode(task_frame, selection_vector, wrench_up, force_type, limits)
+        # self.rtde_c.forceModeStop()
+        # self.rtde_c.free_drive()
 
     # def goToPose(self, goalPose, speed = 0.05, acc = 0.01,  timeCoeff = 10, lookahead_time = 0.1, gain = 200.0):
     #     # lookahead_time range [0.03 0.2]

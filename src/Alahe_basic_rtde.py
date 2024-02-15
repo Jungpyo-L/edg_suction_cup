@@ -93,23 +93,25 @@ def main(args):
     print(rtde_help.getCurrentPose())
     
     # rtde_help.goToPoseAdaptive(disEngagePose)
-    rospy.sleep(0.1)
+    rospy.sleep(0.5)
     #displaying the distance at each step 
     
     while not distance <0.01: 
       current_pose = rtde_help.getTCPPose(disEngagePose) #attempt to get updated pose as the UR10 is moving
       print("Current pose is: ", current_pose)
-      print("Received distance is: ", calculate_distance(current_pose, disengagePosition_init))
+      rospy.sleep(0.5)
+      print("Received distance is: ", calculate_distance(current_pose, disEngagePose))
 
     
     print("Calcualted distance is: ", distance)
-    print("============ Python UR_Interface demo complete!")
-
+    print(rtde_help.getTCPForce())
+    # modifying payload incase getTCPForce is not zero or close to zero
+    # payload_mass = 2.0  
+    # payload_CoG = [0.0, 0.0, 200]  
+    # rtde_help.setPayload(payload_mass, payload_CoG)
     rtde_help.goToPose(disEngagePose2)
-
-
-
-
+    print("============ Python UR_Interface demo complete!")
+    
     
   
   except rospy.ROSInterruptException:
