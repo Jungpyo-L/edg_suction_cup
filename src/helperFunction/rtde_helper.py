@@ -21,7 +21,7 @@ import rtde_receive
 
 from scipy.spatial.transform import Rotation as R
 import copy
-
+import numpy as np
 adpt_help = adaptMotionHelp()
 
 
@@ -123,20 +123,46 @@ class rtdeHelp(object):
     def goToPositionOrientation(self, goalPosition, setOrientation, asynchronous = False):
         self.goToPose(self.getPoseObj(goalPosition, setOrientation))
 
-    def goToPose(self, goalPose, speed = 0.3, acc = 0.2, asynchronous=False):
+    def goToPose(self, goalPose, speed = 0.05, acc = 0.2, asynchronous=False):
         pose = self.getTransformedPose(goalPose)
         targetPose = self.getTCPPose(pose)
         # speed = self.speed
         # acc = self.acc
         self.rtde_c.moveL(targetPose, speed, acc, asynchronous)
-        
-    # def goToPose2(self, goalPose, speed = 0.25, acc = 1.2, mode=1):
-    #     pose = self.getTransformedPose(goalPose)
-    #     targetPose = self.getTCPPose(pose)
-    #     # speed = self.speed
-    #     # acc = self.acc
-    #     self.rtde_c.movec(pose, targetPose, acc, speed, r =0, mode) #circular motion in tool-space
+    
+    def getTCPForce(self):
+        wrench = self.rtde_c.getActualTCPForce()
+        F_x = wrench[0]
+        F_y = wrench[1]
+        F_z = wrench[2]
+        F_m = np.sqrt(F_x**2 + F_y**2 + F_z**2)
+        mass = F_m/9.81
+        return [F_x, F_y, F_z, F_m, mass]
+    
 
+    def goToPose2(self, goalPose, speed = 0.0, acc = 0.0, time=0.1, lookahead_time=0.5, gain=300, asynchronous=False):
+        pose = self.getTransformedPose(goalPose)
+        targetPose = self.getTCPPose(pose)
+        speed = self.speed
+        # acc = self.acc
+        self.rtde_c.moveL(targetPose, speed, acc, time, lookahead_time, gain) 
+        while not self.checkGoalPoseReached(goalPose):
+            distance_threshold=0.1
+            if self.checkGoalPoseReached(goalPose, checkDistThres=distance_threshold):
+                self.rtde_c.speedL([0,0,0,0,0,0], acc)
+                break
+
+    def goToPose3(self, goalPose, speed = 0.0, acc = 0.0, asynchronous=False):
+        pose = self.getTransformedPose(goalPose)
+        targetPose = self.getTCPPose(pose)
+        speed = self.speed
+        # acc = self.acc
+        self.rtde_c.moveL(targetPose, speed, acc, asynchronous) 
+        while not self.checkGoalPoseReached(goalPose):
+            distance_threshold=0.1
+            if self.checkGoalPoseReached(goalPose, checkDistThres=distance_threshold):
+                self.rtde_c.speedL([0,0,0,0,0,0], acc)
+                break
     # def goToPose(self, goalPose, speed = 0.05, acc = 0.01,  timeCoeff = 10, lookahead_time = 0.1, gain = 200.0):
     #     # lookahead_time range [0.03 0.2]
     #     # grain range [100 2000]

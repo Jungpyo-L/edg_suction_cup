@@ -69,16 +69,16 @@ def main(args):
   disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation) 
 
 
-  disengagePosition_init2 =  [-0.597, .211, 0.225] # unit is in m
+  disengagePosition_init2 =  [-0.55, .211, 0.025] # unit is in m
   setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r), the orientaiton/frame of the trajec
   disEngagePose2 = rtde_help.getPoseObj(disengagePosition_init2, setOrientation) 
 
   
   print("disEngagePose: ",  disEngagePose.pose.position)
   target = [disEngagePose.pose.position.x,  disEngagePose.pose.position.y,  disEngagePose.pose.position.z]
-  
-  distance = calculate_distance(disengagePosition_init, target)
-
+  current = rtde_help.getCurrentPose()
+  distance = calculate_distance(current, disengagePosition_init)
+ 
   #subscribing to receive pose active
   # data = rtdeHelp.receive()
   # #looking for the real time pose
@@ -93,19 +93,21 @@ def main(args):
     print(rtde_help.getCurrentPose())
     
     # rtde_help.goToPoseAdaptive(disEngagePose)
-    rospy.sleep(0.1)
+    rospy.sleep(0.5)
     #displaying the distance at each step 
     
-    while not distance <0.01: 
-      current_pose = rtde_help.getTCPPose(disEngagePose) #attempt to get updated pose as the UR10 is moving
-      print("Current pose is: ", current_pose)
-      print("Received distance is: ", calculate_distance(current_pose, disengagePosition_init))
+    # while not distance <0.01: 
+    #   current_pose = rtde_help.getTCPPose(disEngagePose) #attempt to get updated pose as the UR10 is moving
+    #   print("Current pose is: ", current_pose)
+    #   print("Received distance is: ", calculate_distance(current_pose, disEngagePose))
 
-    
+    # distance2= disEngagePose-rtde_help.getTCPPose(disEngagePose)
     print("Calcualted distance is: ", distance)
+    # print(rtde_help.getActualTCPForce())
+    # print(rtde_help.getActualTCPPose())
     print("============ Python UR_Interface demo complete!")
 
-    rtde_help.goToPose(disEngagePose2)
+    # rtde_help.goToPose(disEngagePose)
 
 
 

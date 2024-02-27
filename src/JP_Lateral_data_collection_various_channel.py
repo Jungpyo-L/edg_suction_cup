@@ -117,7 +117,9 @@ def main(args):
   
   # pose initialization
   xoffset = args.xoffset
-  disengagePosition_init =  [-0.593, .206, 0.025] # unit is in m
+  disengagePosition_init =  [-0.711, .107, 0.020] # seb
+
+  # disengagePosition_init =  [-0.613, .280, 0.025] # unit is in m
   if args.ch == 6:
     disengagePosition_init[2] += 0.02
   elif args.newCup == True:
@@ -134,7 +136,7 @@ def main(args):
     rospy.sleep(0.1)
 
     P_help.startSampling()      
-    rospy.sleep(0.5)
+    rospy.sleep(1)
     FT_help.setNowAsBias()
     P_help.setNowAsOffset()
     Fz_offset = FT_help.averageFz
@@ -144,7 +146,7 @@ def main(args):
 
     if args.zHeight == True:
       with open(datadir + '/engage_z.p', 'rb') as handle:
-        engage_z = pickle.load(handle) -4e-3
+        engage_z = pickle.load(handle) -1e-3
         if args.ch == 6:
           engage_z = engage_z + 19e-3
         elif args.newCup == True:
@@ -201,7 +203,7 @@ def main(args):
 
     input("Press <Enter> to start to data collection")
     startAngleFlag = True
-    for j in range(xoffset, 16):
+    for j in range(xoffset, 22):
 
       print("Move to the upated disengage point")
       # add offset to the disengage position
@@ -215,6 +217,7 @@ def main(args):
       engagePosition[2] = engage_z
 
       for i in range(round(args.angle/5)+1):
+      # for i in range(0, 1):
 
         print("offset: ", j)
         print("Pose Idx: ", i)
@@ -249,7 +252,7 @@ def main(args):
         # start data logging
         print("Start to record data")
         dataLoggerEnable(True)
-        rospy.sleep(0.3) # default is 0.5
+        rospy.sleep(0.2) # default is 0.5
         syncPub.publish(SYNC_START)
         rospy.sleep(1) # default is 2
         P_init = P_help.four_pressure
@@ -260,7 +263,7 @@ def main(args):
         # P_init[1] = P_init[0] # for the case of channel 3 suction cup
         # P_init[1] = P_init[0] # for the case of channel 2 suction cup
         # P_init[3] = P_init[2] # for the case of channel 2 suction cup
-        if all(np.array(P_init)<P_vac) and i == 0 and j != 7:
+        if all(np.array(P_init)<P_vac) and i == 0 and j != 8:
           print("Suction Engage Succeed from initial touch")
           SuctionFlag = True
         else:
@@ -272,19 +275,20 @@ def main(args):
         syncPub.publish(SYNC_STOP)
         rospy.sleep(0.1)
         targetPWM_Pub.publish(DUTYCYCLE_0)
-        rospy.sleep(0.1)
+        # rospy.sleep(0.1)
         rtde_help.goToPose(targetPose_init)
 
         # stop data logging
-        rospy.sleep(0.2)
+        rospy.sleep(0.1)
         dataLoggerEnable(False)
-        rospy.sleep(0.2)    
+        rospy.sleep(0.1)    
 
         # save data and clear the temporary folder
-        file_help.saveDataParams(args, appendTxt='jp_lateral_'+'xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta))
+        # file_help.saveDataParams(args, appendTxt='jp_lateral_'+'corner_' + str(args.corner)+'_xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta))
+        file_help.saveDataParams(args, appendTxt='sdl_lateral_' +'xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta))
         file_help.clearTmpFolder()
         P_help.stopSampling()
-        rospy.sleep(0.3) # default is 0.5
+        rospy.sleep(0.1) # default is 0.5
         if SuctionFlag == True:
           break
 
@@ -337,6 +341,8 @@ if __name__ == '__main__':
   parser.add_argument('--zHeight', type=bool, help='use presset height mode? (rather than normal force)', default= False)
   parser.add_argument('--ch', type=int, help='number of channel', default= 4)
   parser.add_argument('--newCup', type=bool, help='whether we use new suction cup (ver2) or not', default= False)
+  parser.add_argument('--corner', type=int, help='corner angle of the object', default= 180)
+  parser.add_argument('--disk_curvature', type=int, help='curvature or radius of disk', default= 0)
 
 
   args = parser.parse_args()    

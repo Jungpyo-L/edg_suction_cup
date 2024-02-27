@@ -104,8 +104,8 @@ def line_parameters(P_alpha, alpha, P_beta, beta):
 def main(args):
   #========================== Edge Following knobs to tune =============================
 
-  d_lat = 2.5e-3
-  beta = 4.0
+  d_lat = 5.0e-3
+  beta = 3.5
 
   # P_ref = 40
   # start_offset = 32e-3
@@ -113,11 +113,11 @@ def main(args):
   # P_ref = 70
   # start_offset = 31.5e-3
 
-  # P_ref = 100
-  # start_offset = 31e-3
-
-  P_ref = 150
+  P_ref = 100
   start_offset = 31e-3
+
+  # P_ref = 150
+  # start_offset = 31e-3
 
   # P_ref = 200
   # start_offset = 31e-3
@@ -126,10 +126,10 @@ def main(args):
   # start_offset = 30.5e-3
 
   # P_ref = 300
-  # start_offset = 30e-3
+  # start_offset = 30.5e-3
 
-  # P_ref = 100
-  # start_offset = 0e-3
+
+
 
   P_n = 10
   P_ll = P_ref 
@@ -175,16 +175,11 @@ def main(args):
   d_z = 0.02e-3
 
   #========================== User Input================================================
-
-  # engagePosition =  [-629e-3, 96e-3, 15e-3]   # 35mm disk
-  # engagePosition =  [- (600e-3 - 6e-3), 76e-3, 18e-3]   # 3D fillet
-  engagePosition =  [- (600e-3 - 60e-3), 176e-3, 15e-3]   # disks and holes
-  # engagePosition =  [-580e-3, 0e-3, 12e-3]   # 1/4"
-  # engagePosition =  [-560e-3, 0e-3, 20e-3]   # 1/2"
-  # engagePosition =  [-580e-3, 0e-3, 80e-3]   # foam block
-
-
+  engagePosition =  [-629e-3, 96e-3, 15e-3]   # 35mm disk
+  # engagePosition =  [-586e-3, 198e-3, 35e-3 - 004e-3]
+  # engagePosition =  [-597e-3 - 001e-3, 200e-3, 118e-3]
   # engagePosition =  [-574e-3 -32e-3, 90e-3, 15e-3]     # for dome tilted
+  # engagePosition =  [-629e-3, 96e-3, 15e-3]   # hard coded circle
   # engagePosition =  [-611e-3 + 147e-3, 98e-3, 20e-3]   # for square edge
   # engagePosition =  [-611e-3 + 147e-3, 98e-3, 25e-3 + 60e-3]   # for square edge
   # engagePosition =  [-574e-3 -66e-3, 90e-3, 15e-3]     # for dome tilted
@@ -205,14 +200,18 @@ def main(args):
   Fz_tolerance = 0.1
   # args.domeRadius = 99999
 
-  # start_offset = 33e-3
+  
   
   args.d_lat = d_lat
+  args.diskRadius = 35
   args.start_offset = start_offset
   args.P_lims = [P_ll, P_ul]
   args.alpha_beta = [alpha2, beta2, alpha1, beta1]
+  args.Pref = P_ll
+  args.beta = beta2
+  args.success = 0
 
-  dP_threshold = P_n
+  dP_threshold = 10
   # P_lim_upper = 400
   # P_lim_lower = 200
   P_noise = 10
@@ -285,7 +284,11 @@ def main(args):
 
   try:
     # go to disengage pose, save pose
-    input("press enter to go to disengage pose")
+    # input("press enter to go to disengage pose")
+
+    # rospy.sleep(0.1)
+    # rtde_help.goToPose(disEngagePose)
+
     rospy.sleep(0.1)
     rtde_help.goToPose(disEngagePose)
     targetPWM_Pub.publish(DUTYCYCLE_30)
@@ -313,6 +316,9 @@ def main(args):
 
     tipContactPose = rtde_help.getCurrentPose()
 
+    x0 = tipContactPose.pose.position.x
+    y0 = tipContactPose.pose.position.y
+
     # SET GAMMA AND PHI FOR ROTATED CONFIG
     theta = 0 * pi/180
     omega_hat1 = hat(np.array([1, 0, 0]))
@@ -336,11 +342,11 @@ def main(args):
     # cx = 0
     cx = start_offset
     # cz = -L*np.cos(theta)
-    cz = 0
+    cz = 3e-3
     T_from_tipContact = create_transform_matrix(Rw, [0.0, cx, cz])
 
     # GO TO BACK POSE
-    input("go to first big angle")
+    input("press enter to go to starting position")
     targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_from_tipContact, tipContactPose)
     rospy.sleep(0.5)
     rtde_help.goToPose(targetPose)
@@ -357,7 +363,7 @@ def main(args):
     targetPoseStamped = copy.deepcopy(targetPose)
 
     # START ADAPTIVE MOTION
-    input("press enter for adaptive motion")
+    # input("press enter for adaptive motion")
 
     num_iterations = 10  # You can replace this with the actual number of iterations in your loop
     time_values = np.zeros(num_iterations)
@@ -398,9 +404,13 @@ def main(args):
     edgeFollowing_history = []
     # history_edgeFollowing = []
 
-    
-    for i in range(80000):
+    swept_angle = 0
+    i = 0
+    # for i in range(80000):
+    while swept_angle < 358:
+      if swept_angle > 355: args.success=1
       # print(i)
+      i += 1
       prevTime = time.time()
       
       farFlag = True
@@ -568,8 +578,9 @@ def main(args):
 
       T_later = adpt_help.get_Tmat_TranlateInBodyF([dx_lat, dy_lat, 0.0])
 
-      T_normalMove = adpt_help.get_Tmat_axialMove(F_normal, F_normalThres)
-      # T_normalMove = np.eye(4)
+      # T_normalMove = adpt_help.get_Tmat_axialMove(F_normal, F_normalThres)
+      T_normalMove = np.eye(4)
+
       T_move =  T_later @ T_align @ T_normalMove # lateral --> align --> normal
       # T_move =  T_normalMove
       # T_move =  T_align
@@ -581,6 +592,18 @@ def main(args):
       # ic(measuredCurrPose)
       xi = measuredCurrPose.pose.position.x
       yi = measuredCurrPose.pose.position.y
+      zi = measuredCurrPose.pose.position.z
+
+      ic(zi)
+
+      x_new = xi - x0
+      y_new = yi - y0
+      swept_angle = np.arctan2(y_new, x_new) * 180 / np.pi
+      if swept_angle < 0: swept_angle += 360
+      if abs(swept_angle-180) > 170 and i < 50: swept_angle = 0
+
+      # ic(x_new, y_new)
+      ic(swept_angle)
 
       # edgeFollowing_history.append([currentTime, r_p, corr_p, r_p_final, F_normal, *P_array])
       edgeFollowing_history.append([currentTime, xi, yi, r_p, corr_p, r_p_final, F_normal, *P_array])
@@ -650,7 +673,7 @@ def main(args):
         rospy.sleep(0.1)
         break
 
-      if abs(P_mean) < dP_threshold:
+      if abs(P_mean) < dP_threshold/2:
         # vacuum seal formed, success!
         suctionSuccessFlag = False
         targetPWM_Pub.publish(DUTYCYCLE_0)
@@ -680,7 +703,8 @@ def main(args):
     args.gamma = theta
     # args.thetaList = np.array(thetaList)
     # file_help.saveDataParams(args, appendTxt='rotCharac')
-    file_help.saveDataParams(args, appendTxt='seb_testEdgeFollowing_deleteMe')
+    # file_help.saveDataParams(args, appendTxt='seb_testEdgeFollowing_deleteMe')
+    file_help.saveDataParams(args, appendTxt='seb_testEdgeFollowing_' +'refP_' + str(args.Pref)+ '_beta_' + str(args.beta) + '_step_' + str(args.d_lat) + '_deleteMe')
     # file_help.saveDataParams(args, appendTxt='seb_rotational_'+'domeRadius_' + str(args.domeRadius) + '_gamma_' + str(args.gamma) + '_theta_' + str(args.theta))
     # file_help.saveDataParams(args, appendTxt='jp_lateral_'+'xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta))
     file_help.clearTmpFolder()
