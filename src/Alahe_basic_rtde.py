@@ -103,7 +103,7 @@ def main(args):
       current_pose = rtde_help.getTCPPose(rtde_help.getCurrentTCPPose()) #attempt to get updated pose as the UR10 is moving
       print("Current pose is: ", current_pose)
       rospy.sleep(0.5)
-      print("Received distance is: ", calculate_distance(current_pose, disEngagePose))
+      print("Received distance is: ", calculate_distance(current_pose, disEngagePose)) 
 
     
     print("Calcualted distance traveled is: ", distance2) #distance2 being the difference between isEngagePose and currentPose

@@ -253,7 +253,7 @@ def main(args):
         syncPub.publish(SYNC_START)
         rospy.sleep(1) # default is 2
         P_init = P_help.four_pressure
-        F_normal = FT_help.averageFz_noOffset
+        F_normal = FT_help.averageFz_noOffset 
         args.normalForceActual = F_normal
         args.pressure_avg = P_init
         P_vac = P_help.P_vac
