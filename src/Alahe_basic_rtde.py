@@ -67,6 +67,7 @@ def main(args):
   disengagePosition_init =  [-0.597, .211, 0.025] # unit is in m
   setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r), the orientaiton/frame of the trajec
   disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation) 
+  currentPose = rtde_help.getTCPPose(rtde_help.getCurrentTCPPose())
 
 
   disengagePosition_init2 =  [-0.597, .211, 0.225] # unit is in m
@@ -77,7 +78,9 @@ def main(args):
   print("disEngagePose: ",  disEngagePose.pose.position)
   target = [disEngagePose.pose.position.x,  disEngagePose.pose.position.y,  disEngagePose.pose.position.z]
   
-  distance = calculate_distance(disengagePosition_init, target)
+  distance = calculate_distance(currentPose, target)
+  distance2 = disEngagePose-currentPose
+
 
   #subscribing to receive pose active
   # data = rtdeHelp.receive()
@@ -97,19 +100,19 @@ def main(args):
     #displaying the distance at each step 
     
     while not distance <0.01: 
-      current_pose = rtde_help.getTCPPose(disEngagePose) #attempt to get updated pose as the UR10 is moving
+      current_pose = rtde_help.getTCPPose(rtde_help.getCurrentTCPPose()) #attempt to get updated pose as the UR10 is moving
       print("Current pose is: ", current_pose)
       rospy.sleep(0.5)
       print("Received distance is: ", calculate_distance(current_pose, disEngagePose))
 
     
-    print("Calcualted distance is: ", distance)
-    print(rtde_help.getTCPForce())
+    print("Calcualted distance traveled is: ", distance2) #distance2 being the difference between isEngagePose and currentPose
+    #print(rtde_help.getTCPForce())
     # modifying payload incase getTCPForce is not zero or close to zero
     # payload_mass = 2.0  
     # payload_CoG = [0.0, 0.0, 200]  
     # rtde_help.setPayload(payload_mass, payload_CoG)
-    rtde_help.goToPose(disEngagePose2)
+    rtde_help.goToPose2(disEngagePose2)
     print("============ Python UR_Interface demo complete!")
     
     

@@ -18,6 +18,7 @@ from .utils import create_transform_matrix
 import rtde_control
 import rtde_receive
 
+from tf.transformations import quaternion_matrix
 
 from scipy.spatial.transform import Rotation as R
 import copy
@@ -120,6 +121,16 @@ class rtdeHelp(object):
         Rx, Ry, Rz = self.getRotVector(pose)
         return [x, y, z, Rx, Ry, Rz]
     
+    def speedl(self, goalPose,speed=0.5, acc=0.5, time=0.5, aRot='a'):
+
+        if len(goalPose) != 6:
+            raise ValueError("Target pose must have 6 elements: [x, y, z, Rx, Ry, Rz]")
+        try:
+        # Perform linear motion using moveL function
+            self.rtde_c.speedL(goalPose, self.speed, self.acc, time, aRot)
+        except Exception as e:
+            print(f"Error occurred during linear motion: {e}")
+    
     def getTCPForce(self): # gets (Force/Torque vector) at the TCP
         wrench=self.rtde_r.getActualTCPForce()
         F_x=wrench[0]
@@ -129,6 +140,7 @@ class rtdeHelp(object):
         mass=F_m/9.81 #convert to kg
         return [F_x, F_y, F_z, F_m, mass]
     
+
     def setPayload(self, payload, CoG):
         # Assuming method is avalible within RTDEControlInterface
         self.rtde_c.set_payload(payload, CoG)
@@ -143,25 +155,16 @@ class rtdeHelp(object):
         # acc = self.acc
         self.rtde_c.moveL(targetPose, speed, acc, asynchronous)
         
-    def goToPose2(self, goalPose, speed=0.4, acc=0.2, time=0.1, lookahead_time=0.5, gain=300):
+    def goToPose2(self, goalPose, speed=0.3, acc=0.2, time=0.1, lookahead_time=0.5, gain=300):
         pose = self.getTransformedPose(goalPose)
         targetPose = self.getTCPPose(pose)
         speed= self.speed
-        # task_frame = [0, 0, 0, 0, 0, 0]
-        # selection_vector = [0, 0, 1, 0, 0, 0]
-        # wrench_down = [0, 0, -1, 0, 0, 0]
-        # wrench_up = [0, 0, 1, 0, 0, 0]
-        # force_type = 2
-        # limits = [2, 2, 1.5, 1, 1, 1]
-        # dt = 1.0/500  # 2ms
-        # joint_q = [-1.54, -1.83, -2.28, -0.59, 1.60, 0.023]
-
-        # Move to initial joint position with a regular moveJ
         self.rtde_c.moveL(targetPose, speed, acc, time, lookahead_time, gain)
-        # rospy.sleep(0.2)
-        # self.rtde_c.forceMode(task_frame, selection_vector, wrench_up, force_type, limits)
-        # self.rtde_c.forceModeStop()
-        # self.rtde_c.free_drive()
+        while not self.checkGoalPoseReached(goalPose):
+            distance_threshold = 0.01
+            if self.checkGoalPoseReached(goalPose, checkDistThres=distance_threshold):
+                self.rtde_c.speedL([0, 0, 0, 0, 0, 0], acc)  # using speedL to stop once it reached distance threshold
+                break
 
     # def goToPose(self, goalPose, speed = 0.05, acc = 0.01,  timeCoeff = 10, lookahead_time = 0.1, gain = 200.0):
     #     # lookahead_time range [0.03 0.2]
