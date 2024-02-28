@@ -76,14 +76,18 @@ def main(args):
   
   print("disEngagePose: ",  disEngagePose.pose.position)
   target = [disEngagePose.pose.position.x,  disEngagePose.pose.position.y,  disEngagePose.pose.position.z]
-  current = rtde_help.getCurrentPose()
-  distance = calculate_distance(current, disengagePosition_init)
+  currentPose = rtde_help.getPoseObj(rtde_help.getCurrentTCPPose())
+  # currentPose = rtde_help.getPoseObj(rtde_help.getCurrentPose())
+  current = [currentPose.pose.position.x,  currentPose.pose.position.y,  currentPose.pose.position.z]
+
+  distance = calculate_distance(current, target)
  
   #subscribing to receive pose active
   # data = rtdeHelp.receive()
   # #looking for the real time pose
   # rPose = data.actual_tool_pose
-
+  current1=[0,0,0]
+  target1=[0,0,0]
 
   # try block so that we can have a keyboard exception
   try:
@@ -96,10 +100,12 @@ def main(args):
     rospy.sleep(0.5)
     #displaying the distance at each step 
     
-    # while not distance <0.01: 
-    #   current_pose = rtde_help.getTCPPose(disEngagePose) #attempt to get updated pose as the UR10 is moving
-    #   print("Current pose is: ", current_pose)
-    #   print("Received distance is: ", calculate_distance(current_pose, disEngagePose))
+    while not distance <0.5: 
+      current_pose1 = rtde_help.getTCPPose(disEngagePose) #attempt to get updated pose as the UR10 is moving
+      current1 = [current_pose1.pose.position.x,  current_pose1.pose.position.y,  current_pose1.pose.position.z]
+      target1 = [disEngagePose.pose.position.x,  disEngagePose.pose.position.y,  disEngagePose.pose.position.z]
+      print("Current pose is: ", current1)
+      print("Received distance is: ", calculate_distance(current1, target1))
 
     # distance2= disEngagePose-rtde_help.getTCPPose(disEngagePose)
     print("Calcualted distance is: ", distance)
