@@ -155,17 +155,16 @@ class rtdeHelp(object):
         # acc = self.acc
         self.rtde_c.moveL(targetPose, speed, acc, asynchronous)
         
-    def goToPose2(self, goalPose, speed=0.3, acc=0.2, time=0.1, lookahead_time=0.5, gain=300):
+    def goToPose2(self, goalPose, speed=0.0, acc=0.0, asynchronous=False):
         pose = self.getTransformedPose(goalPose)
         targetPose = self.getTCPPose(pose)
         speed= self.speed
-        self.rtde_c.moveL(targetPose, speed, acc, time, lookahead_time, gain)
+        self.rtde_c.moveL(targetPose, speed, acc, asynchronous)
         while not self.checkGoalPoseReached(goalPose):
-            distance_threshold = 0.01
+            distance_threshold = 0.07
             if self.checkGoalPoseReached(goalPose, checkDistThres=distance_threshold):
                 self.rtde_c.speedL([0, 0, 0, 0, 0, 0], acc)  # using speedL to stop once it reached distance threshold
                 break
-
     # def goToPose(self, goalPose, speed = 0.05, acc = 0.01,  timeCoeff = 10, lookahead_time = 0.1, gain = 200.0):
     #     # lookahead_time range [0.03 0.2]
     #     # grain range [100 2000]

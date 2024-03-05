@@ -48,6 +48,10 @@ from helperFunction.fileSaveHelper import fileSaveHelp
 from helperFunction.rtde_helper import rtdeHelp
 from helperFunction.adaptiveMotion import adaptMotionHelp
 
+def calculate_distance(current_position, target_position):
+    return ((current_position[0] - target_position[0])**2 +
+            (current_position[1] - target_position[1])**2 +
+            (current_position[2] - target_position[2])**2) ** 0.5
 
 def main(args):
 
@@ -116,7 +120,13 @@ def main(args):
   setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
   disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
   targetPWM_Pub.publish(DUTYCYCLE_0)
+  currentPose = rtde_help.getCurrentTCPPose()
 
+  current = [currentPose.pose.position.x, currentPose.pose.position.y, currentPose.pose.position.z]
+  target = [disEngagePose.pose.position.x,  disEngagePose.pose.position.y,  disEngagePose.pose.position.z]
+
+  distance=0
+  distance = calculate_distance(current, target)
   # try block so that we can have a keyboard exception
   try:
     # Go to disengage Pose
@@ -124,7 +134,12 @@ def main(args):
     rtde_help.goToPose(disEngagePose)
     rospy.sleep(0.1)
 
-    
+    if not distance <0.01: 
+      current_pose = rtde_help.getCurrentTCPPose() #attempt to get updated pose as the UR10 is moving
+      current1 = [current_pose.pose.position.x, current_pose.pose.position.y, current_pose.pose.position.z]
+      target1 = [disEngagePose.pose.position.x,  disEngagePose.pose.position.y,  disEngagePose.pose.position.z]
+      print("Current pose is: ", current1)
+      print("calculated distance: ", calculate_distance(current1, target1)) 
 
     # change tile angle
     for tilt in range(0, 21, 5):
@@ -235,7 +250,7 @@ def main(args):
     
 
     # P_help.stopSampling()
-
+    print("initial distance: ", distance)
 
     print("============ Python UR_Interface demo complete!")
   

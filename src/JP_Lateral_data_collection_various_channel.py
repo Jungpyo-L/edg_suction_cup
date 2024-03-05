@@ -109,7 +109,7 @@ def main(args):
 
   print("Wait for the data_logger to be enabled")
   rospy.wait_for_service('data_logging')
-  dataLoggerEnable = rospy.ServiceProxy('data_logging', Enable)
+  dataLoggerEnable = rospy.ServiceProxy('data_logging', Enable) #*
   dataLoggerEnable(False) # reset Data Logger just in case
   rospy.sleep(1)
   file_help.clearTmpFolder()        # clear the temporary folder
@@ -244,7 +244,7 @@ def main(args):
         targetOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2+pi/36*i,'sxyz') #static (s) rotating (r)
         targetPose = rtde_help.getPoseObj(engagePosition, targetOrientation)
         rtde_help.goToPose(targetPose)
-        targetPWM_Pub.publish(DUTYCYCLE_100)
+        targetPWM_Pub.publish(DUTYCYCLE_100) 
 
         # start data logging
         print("Start to record data")
@@ -277,12 +277,12 @@ def main(args):
 
         # stop data logging
         rospy.sleep(0.2)
-        dataLoggerEnable(False)
+        dataLoggerEnable(False) #*
         rospy.sleep(0.2)    
 
         # save data and clear the temporary folder
-        file_help.saveDataParams(args, appendTxt='jp_lateral_'+'xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta))
-        file_help.clearTmpFolder()
+        file_help.saveDataParams(args, appendTxt='jp_lateral_'+'xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta)) #*
+        file_help.clearTmpFolder()#*
         P_help.stopSampling()
         rospy.sleep(0.3) # default is 0.5
         if SuctionFlag == True:
