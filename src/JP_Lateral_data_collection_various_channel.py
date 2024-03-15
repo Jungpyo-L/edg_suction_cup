@@ -42,7 +42,6 @@ from scipy import signal
 
 from math import pi, cos, sin, floor
 
-
 from helperFunction.SuctionP_callback_helper import P_CallbackHelp #check channel number
 from helperFunction.FT_callback_helper import FT_CallbackHelp
 from helperFunction.fileSaveHelper import fileSaveHelp
@@ -51,6 +50,11 @@ from helperFunction.adaptiveMotion import adaptMotionHelp
 
 
 def main(args):
+  if args.ch == 6:
+    from helperFunction.SuctionP_callback_helper_ch6 import P_CallbackHelp
+  else:
+    from helperFunction.SuctionP_callback_helper import P_CallbackHelp #check channel number
+
 
   deg2rad = np.pi / 180.0
   DUTYCYCLE_100 = 100
@@ -117,9 +121,9 @@ def main(args):
   
   # pose initialization
   xoffset = args.xoffset
-  disengagePosition_init =  [-0.711, .107, 0.020] # seb
+  # disengagePosition_init =  [-0.711, .107, 0.020] # seb
 
-  # disengagePosition_init =  [-0.613, .280, 0.025] # unit is in m
+  disengagePosition_init =  [-0.6205, .280, 0.0165] # unit is in m
   if args.ch == 6:
     disengagePosition_init[2] += 0.02
   elif args.newCup == True:
@@ -145,12 +149,16 @@ def main(args):
     input("Press <Enter> to go normal to get engage point")
 
     if args.zHeight == True:
-      with open(datadir + '/engage_z.p', 'rb') as handle:
-        engage_z = pickle.load(handle) -1e-3
-        if args.ch == 6:
-          engage_z = engage_z + 19e-3
-        elif args.newCup == True:
-          engage_z = engage_z + 49e-3
+      # with open(datadir + '/engage_z.p', 'rb') as handle:
+      #   engage_z = pickle.load(handle) -1e-3
+      #   if args.ch == 6:
+      #     engage_z = engage_z + 19e-3
+      #   elif args.newCup == True:
+      #     engage_z = engage_z + 49e-3
+      if args.ch == 6:
+        engage_z = disengagePosition_init[2] - 4e-3
+      else:
+        engage_z = disengagePosition_init[2] - 4e-3
       
     else:
       initEndEffPoseStamped = rtde_help.getCurrentPose()
@@ -203,7 +211,7 @@ def main(args):
 
     input("Press <Enter> to start to data collection")
     startAngleFlag = True
-    for j in range(xoffset, 22):
+    for j in range(xoffset, 16):
 
       print("Move to the upated disengage point")
       # add offset to the disengage position
@@ -260,17 +268,18 @@ def main(args):
         args.normalForceActual = F_normal
         args.pressure_avg = P_init
         P_vac = P_help.P_vac
-        # P_init[1] = P_init[0] # for the case of channel 3 suction cup
+        if args.ch == 3:
+          P_init[3] = P_init[2] # for the case of channel 3 suction cup
         # P_init[1] = P_init[0] # for the case of channel 2 suction cup
         # P_init[3] = P_init[2] # for the case of channel 2 suction cup
-        if all(np.array(P_init)<P_vac) and i == 0 and j != 8:
+        if all(np.array(P_init)<P_vac) and i == 0 and j != 7:
           print("Suction Engage Succeed from initial touch")
           SuctionFlag = True
         else:
           SuctionFlag = False
-        if args.ch == 6:
-          if j<7:
-            SuctionFlag = True
+        # if args.ch == 6:
+        #   if j<7:
+        #     SuctionFlag = True
         print("Stop to record data")
         syncPub.publish(SYNC_STOP)
         rospy.sleep(0.1)
@@ -284,8 +293,8 @@ def main(args):
         rospy.sleep(0.1)    
 
         # save data and clear the temporary folder
-        # file_help.saveDataParams(args, appendTxt='jp_lateral_'+'corner_' + str(args.corner)+'_xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta))
-        file_help.saveDataParams(args, appendTxt='sdl_lateral_' +'xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta))
+        file_help.saveDataParams(args, appendTxt='jp_lateral_'+'corner_' + str(args.corner)+'_xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta)+'_material_' + str(args.material))
+        # file_help.saveDataParams(args, appendTxt='sdl_lateral_' +'xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta))
         file_help.clearTmpFolder()
         P_help.stopSampling()
         rospy.sleep(0.1) # default is 0.5
@@ -342,6 +351,7 @@ if __name__ == '__main__':
   parser.add_argument('--ch', type=int, help='number of channel', default= 4)
   parser.add_argument('--newCup', type=bool, help='whether we use new suction cup (ver2) or not', default= False)
   parser.add_argument('--corner', type=int, help='corner angle of the object', default= 180)
+  parser.add_argument('--material', type=int, help='0: Mold max 40, 1: Elastic 50A (formlab), 2: Agilus 30 (Objet)', default= 0)
   parser.add_argument('--disk_curvature', type=int, help='curvature or radius of disk', default= 0)
 
 

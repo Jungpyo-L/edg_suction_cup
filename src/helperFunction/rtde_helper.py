@@ -123,7 +123,11 @@ class rtdeHelp(object):
     def goToPositionOrientation(self, goalPosition, setOrientation, asynchronous = False):
         self.goToPose(self.getPoseObj(goalPosition, setOrientation))
 
-    def goToPose(self, goalPose, speed = 0.05, acc = 0.2, asynchronous=False):
+    # def goToPose(self, goalPose, speed = 2.5, acc = 1.7, asynchronous=False):
+    # def goToPose(self, goalPose, speed = 0.1, acc = 0.1, asynchronous=False):     # original? need for edge following
+    # def goToPose(self, goalPose, speed = 0.05, acc = 0.01, asynchronous=False):    # try this!
+    def goToPose(self, goalPose, speed = 0.3, acc = 1.7, asynchronous=False):        # seb experimenting
+    # def goToPose(self, goalPose, speed = 0.25, acc = 0.15, asynchronous=False):          # Alahe
         pose = self.getTransformedPose(goalPose)
         targetPose = self.getTCPPose(pose)
         # speed = self.speed
@@ -140,19 +144,7 @@ class rtdeHelp(object):
         return [F_x, F_y, F_z, F_m, mass]
     
 
-    def goToPose2(self, goalPose, speed = 0.0, acc = 0.0, time=0.1, lookahead_time=0.5, gain=300, asynchronous=False):
-        pose = self.getTransformedPose(goalPose)
-        targetPose = self.getTCPPose(pose)
-        speed = self.speed
-        # acc = self.acc
-        self.rtde_c.moveL(targetPose, speed, acc, time, lookahead_time, gain) 
-        while not self.checkGoalPoseReached(goalPose):
-            distance_threshold=0.1
-            if self.checkGoalPoseReached(goalPose, checkDistThres=distance_threshold):
-                self.rtde_c.speedL([0,0,0,0,0,0], acc)
-                break
-
-    def goToPose3(self, goalPose, speed = 0.0, acc = 0.0, asynchronous=False):
+    def goToPose2(self, goalPose, speed = 0.0, acc = 0.0, asynchronous=False):
         pose = self.getTransformedPose(goalPose)
         targetPose = self.getTCPPose(pose)
         speed = self.speed
@@ -202,9 +194,9 @@ class rtdeHelp(object):
         print("distDiff: %.4f" % distDiff)
         return distDiff < checkDistThres and quatDiff < checkQuatThres
             
-    # def goToPoseAdaptive(self, goalPose, speed = 0.0, acc = 0.0,  time = 0.05, lookahead_time = 0.2, gain = 100.0): # normal force measurement
+    def goToPoseAdaptive(self, goalPose, speed = 0.0, acc = 0.0,  time = 0.05, lookahead_time = 0.2, gain = 100.0): # normal force measurement
     # def goToPoseAdaptive(self, goalPose, speed = 0.02, acc = 0.02,  time = 0.05, lookahead_time = 0.05, gain = 200.0):
-    def goToPoseAdaptive(self, goalPose, speed = 0.0, acc = 0.0,  time = 0.05, lookahead_time = 0.2, gain = 200.0):
+    # def goToPoseAdaptive(self, goalPose, speed = 0.0, acc = 0.0,  time = 0.05, lookahead_time = 0.2, gain = 200.0):
         # lookahead_time range [0.03 0.2]
         # grain range [100 2000]
         t_start = self.rtde_c.initPeriod()

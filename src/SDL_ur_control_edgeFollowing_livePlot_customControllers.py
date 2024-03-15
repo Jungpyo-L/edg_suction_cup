@@ -104,8 +104,8 @@ def line_parameters(P_alpha, alpha, P_beta, beta):
 def main(args):
   #========================== Edge Following knobs to tune =============================
 
-  d_lat = 2.5e-3
-  beta = 4.0
+  d_lat = 7.50e-3
+  beta = 1.5
 
   # P_ref = 40
   # start_offset = 32e-3
@@ -114,10 +114,13 @@ def main(args):
   # start_offset = 31.5e-3
 
   # P_ref = 100
-  # start_offset = 31e-3
+  # start_offset = 31.0e-3
 
-  P_ref = 150
-  start_offset = 31e-3
+  P_ref = 100
+  start_offset = 31.5e-3
+
+  # P_ref = 150
+  # start_offset = 31e-3
 
   # P_ref = 200
   # start_offset = 31e-3
@@ -176,10 +179,10 @@ def main(args):
 
   #========================== User Input================================================
 
-  # engagePosition =  [-629e-3, 96e-3, 15e-3]   # 35mm disk
+  engagePosition =  [-630e-3, 97e-3, 15e-3]   # 35mm disk
   # engagePosition =  [- (600e-3 - 6e-3), 76e-3, 18e-3]   # 3D fillet
-  engagePosition =  [- (600e-3 - 60e-3), 176e-3, 15e-3]   # disks and holes
-  # engagePosition =  [-580e-3, 0e-3, 12e-3]   # 1/4"
+  # engagePosition =  [- (600e-3 - 60e-3), 176e-3, 15e-3]   # disks and holes
+  # engagePosition =  [-500e-3, 200e-3, 12e-3]   # 1/4"
   # engagePosition =  [-560e-3, 0e-3, 20e-3]   # 1/2"
   # engagePosition =  [-580e-3, 0e-3, 80e-3]   # foam block
 
@@ -197,9 +200,9 @@ def main(args):
   # controller_str = "W1"
 
   # F_normalThres = [1.5, 1.6]
-  F_normalThres = [1.1, 1.2]
+  # F_normalThres = [1.1, 1.2]
   # F_normalThres = [0.9, 1.0]
-  # F_normalThres = [0.6, 0.9]
+  F_normalThres = [0.8, 0.9]
   # F_normalThres = [50, 60]
   # F_normalThres = 1.5 #1
   Fz_tolerance = 0.1

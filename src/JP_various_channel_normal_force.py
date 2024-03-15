@@ -78,7 +78,7 @@ def main(args):
   rtde_help = rtde_help = rtdeHelp(125)
   rospy.sleep(0.5)
   file_help = fileSaveHelp()
-  adpt_help = adaptMotionHelp(dw = 0.5, d_lat = 0.5e-3, d_z = 0.1e-3)
+  adpt_help = adaptMotionHelp(dw = 0.5, d_lat = 0.5e-3, d_z = 0.05e-3)
 
   # Set the TCP offset and calibration matrix
   rospy.sleep(0.5)
@@ -112,7 +112,9 @@ def main(args):
   
   # pose initialization
   xoffset = args.xoffset
-  disengagePosition_init =  [-0.592, .207, 0.0165] # unit is in m
+  disengagePosition_init =  [-0.625, .280, 0.0185] # unit is in m
+  # if args.ch == 6:
+  #   disengagePosition_init[2] += 0.02
   setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
   disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
 
@@ -155,6 +157,7 @@ def main(args):
 
           # new z height
           targetPoseEngaged = rtde_help.getCurrentPose()
+          rospy.sleep(0.1)
 
         else:
           farFlag = False
@@ -175,7 +178,7 @@ def main(args):
     rospy.sleep(0.2)    
 
     # save data and clear the temporary folder
-    file_help.saveDataParams(args, appendTxt='jp_various_suction_cup_normal_'+'ch_' + str(args.ch)+'_formlab_' + str(args.formlab))
+    file_help.saveDataParams(args, appendTxt='jp_various_suction_cup_normal_'+'ch_' + str(args.ch)+'_material_' + str(args.material))
     file_help.clearTmpFolder()
 
 
@@ -218,7 +221,8 @@ if __name__ == '__main__':
   parser.add_argument('--normalForce', type=float, help='normal force', default= 1.5)
   parser.add_argument('--zHeight', type=bool, help='use presset height mode? (rather than normal force)', default= False)
   parser.add_argument('--ch', type=int, help='number of channel', default= 4)
-  parser.add_argument('--formlab', type=int, help='formlab', default= 1)
+  parser.add_argument('--material', type=int, help='0: Mold max 40, 1: Elastic 50A (formlab), 2: Agilus 30 (Objet)', default= 0)
+
 
 
   args = parser.parse_args()    

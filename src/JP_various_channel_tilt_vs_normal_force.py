@@ -42,8 +42,6 @@ from scipy import signal
 
 from math import pi, cos, sin, floor
 
-from helperFunction.SuctionP_callback_helper_ch6 import P_CallbackHelp #check channel number
-# from helperFunction.SuctionP_callback_helper import P_CallbackHelp
 from helperFunction.FT_callback_helper import FT_CallbackHelp
 from helperFunction.fileSaveHelper import fileSaveHelp
 from helperFunction.rtde_helper import rtdeHelp
@@ -51,6 +49,10 @@ from helperFunction.adaptiveMotion import adaptMotionHelp
 
 
 def main(args):
+  if args.ch == 6:
+    from helperFunction.SuctionP_callback_helper_ch6 import P_CallbackHelp
+  else:
+    from helperFunction.SuctionP_callback_helper import P_CallbackHelp
 
   deg2rad = np.pi / 180.0
   DUTYCYCLE_100 = 100
@@ -111,9 +113,9 @@ def main(args):
   datadir = file_help.ResultSavingDirectory
   
   # pose initialization
-  disengagePosition_init =  [-0.605, .21, 0.025] # unit is in m
+  disengagePosition_init =  [-0.63, .28, 0.025] # unit is in m
   if args.ch == 6:
-    disengagePosition_init =  [-0.605, .21, 0.025 + 0.02] # unit is in m
+    disengagePosition_init =  [-0.63, .28, 0.025 + 0.02] # unit is in m
   setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
   disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
   targetPWM_Pub.publish(DUTYCYCLE_0)
@@ -131,7 +133,7 @@ def main(args):
     for tilt in range(0, 31, 5):
       args.tilt = tilt
       print("tilt: ", tilt)
-      setOrientation = tf.transformations.quaternion_from_euler(pi+args.tilt*pi/180,0,pi/2,'sxyz') #static (s) rotating (r)
+      setOrientation = tf.transformations.quaternion_from_euler(pi+args.tilt*pi/180,0,pi/2 + pi/180 * args.yaw,'sxyz') #static (s) rotating (r)
       disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
       rtde_help.goToPose(disEngagePose)
       rospy.sleep(0.3)
@@ -211,7 +213,7 @@ def main(args):
 
 
         # save data and clear the temporary folder
-        file_help.saveDataParams(args, appendTxt='jp_various_suction_cup_tilt_normal_'+'ch_' + str(args.ch)+'_tilt_' + str(args.tilt)+'_normal_' + str(args.normalForce)+'_formlab_' + str(args.formlab))
+        file_help.saveDataParams(args, appendTxt='jp_various_suction_cup_tilt_normal_'+'ch_' + str(args.ch)+'_tilt_' + str(args.tilt)+'_normal_' + str(args.normalForce)+'_material_' + str(args.material)+'_yaw_' + str(args.yaw))
         file_help.clearTmpFolder()
 
         if args.SuctionFlag:
@@ -257,8 +259,9 @@ if __name__ == '__main__':
   parser.add_argument('--normalForce', type=float, help='normal force', default= 5)
   parser.add_argument('--zHeight', type=bool, help='use presset height mode? (rather than normal force)', default= False)
   parser.add_argument('--ch', type=int, help='number of channel', default= 4)
-  parser.add_argument('--formlab', type=int, help='formlab', default= 1)
+  parser.add_argument('--material', type=int, help='MOldmax: 0, Elastic50: 1, agilus30: 2', default= 1)
   parser.add_argument('--tilt', type=int, help='tilted angle of the suction cup', default= 0)
+  parser.add_argument('--yaw', type=int, help='yaw angle of the suction cup', default= 0)
 
 
   args = parser.parse_args()    

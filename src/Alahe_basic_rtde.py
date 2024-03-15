@@ -64,30 +64,31 @@ def main(args):
 
   
   # pose initialization
-  disengagePosition_init =  [-0.597, .211, 0.025] # unit is in m
+  disengagePosition_init =  [-0.597, .211, 0.035] # unit is in m
   setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r), the orientaiton/frame of the trajec
   disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation) 
 
 
-  disengagePosition_init2 =  [-0.55, .211, 0.025] # unit is in m
+  disengagePosition_init2 =  [-0.555, -0.16, 0.035] # unit is in m
   setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r), the orientaiton/frame of the trajec
   disEngagePose2 = rtde_help.getPoseObj(disengagePosition_init2, setOrientation) 
 
   
   print("disEngagePose: ",  disEngagePose.pose.position)
   target = [disEngagePose.pose.position.x,  disEngagePose.pose.position.y,  disEngagePose.pose.position.z]
-  currentPose = rtde_help.getPoseObj(rtde_help.getCurrentTCPPose())
-  # currentPose = rtde_help.getPoseObj(rtde_help.getCurrentPose())
+  # target = [disEngagePose2.pose.position.x,  disEngagePose2.pose.position.y,  disEngagePose2.pose.position.z]
+  # currentPose = rtde_help.getPoseObj(rtde_help.getCurrentTCPPose())
+  currentPose = rtde_help.getCurrentPose()
   current = [currentPose.pose.position.x,  currentPose.pose.position.y,  currentPose.pose.position.z]
 
   distance = calculate_distance(current, target)
- 
+  # distance2 = calculate_distance(current, target2)
   #subscribing to receive pose active
   # data = rtdeHelp.receive()
   # #looking for the real time pose
   # rPose = data.actual_tool_pose
   current1=[0,0,0]
-  target1=[0,0,0]
+  # target=[0,0,0]
 
   # try block so that we can have a keyboard exception
   try:
@@ -100,15 +101,20 @@ def main(args):
     rospy.sleep(0.5)
     #displaying the distance at each step 
     
-    while not distance <0.5: 
-      current_pose1 = rtde_help.getTCPPose(disEngagePose) #attempt to get updated pose as the UR10 is moving
+    if not distance <0.01: 
+      # current_pose1 = rtde_help.getTCPPose(disEngagePose) #attempt to get updated pose as the UR10 is moving
+      current_pose1 = rtde_help.getCurrentPose() #attempt to get updated pose as the UR10 is moving
       current1 = [current_pose1.pose.position.x,  current_pose1.pose.position.y,  current_pose1.pose.position.z]
-      target1 = [disEngagePose.pose.position.x,  disEngagePose.pose.position.y,  disEngagePose.pose.position.z]
-      print("Current pose is: ", current1)
-      print("Received distance is: ", calculate_distance(current1, target1))
+      # target1 = [disEngagePose2.pose.position.x,  disEngagePose2.pose.position.y,  disEngagePose2.pose.position.z]
+
+      # target1 = [disEngagePose.pose.position.x,  disEngagePose.pose.position.y,  disEngagePose.pose.position.z]
+      print("initial pose: ", current)
+      print("Final pose: ", current1)
+      print("Target: ", target)
+      print("calc distance w final pose: ", calculate_distance(current1, target))
 
     # distance2= disEngagePose-rtde_help.getTCPPose(disEngagePose)
-    print("Calcualted distance is: ", distance)
+    print("Calc distance w init pose: ", distance)
     # print(rtde_help.getActualTCPForce())
     # print(rtde_help.getActualTCPPose())
     print("============ Python UR_Interface demo complete!")

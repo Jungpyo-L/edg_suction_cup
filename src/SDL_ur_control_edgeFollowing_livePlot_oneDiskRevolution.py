@@ -104,8 +104,8 @@ def line_parameters(P_alpha, alpha, P_beta, beta):
 def main(args):
   #========================== Edge Following knobs to tune =============================
 
-  d_lat = 5.0e-3
-  beta = 3.5
+  d_lat = 2.50e-3
+  beta = 2.0
 
   # P_ref = 40
   # start_offset = 32e-3
@@ -127,8 +127,6 @@ def main(args):
 
   # P_ref = 300
   # start_offset = 30.5e-3
-
-
 
 
   P_n = 10
@@ -175,7 +173,7 @@ def main(args):
   d_z = 0.02e-3
 
   #========================== User Input================================================
-  engagePosition =  [-629e-3, 96e-3, 15e-3]   # 35mm disk
+  engagePosition =  [-630e-3, 97e-3, 15e-3]   # 35mm disk
   # engagePosition =  [-586e-3, 198e-3, 35e-3 - 004e-3]
   # engagePosition =  [-597e-3 - 001e-3, 200e-3, 118e-3]
   # engagePosition =  [-574e-3 -32e-3, 90e-3, 15e-3]     # for dome tilted
@@ -222,6 +220,7 @@ def main(args):
   #================================================================================================
     # CONSTANTS
   rtde_frequency = 125
+  # rtde_frequency = 60
 
   deg2rad = np.pi / 180.0
   DUTYCYCLE_100 = 100
