@@ -113,7 +113,7 @@ def main(args):
 
   print("Wait for the data_logger to be enabled")
   rospy.wait_for_service('data_logging')
-  dataLoggerEnable = rospy.ServiceProxy('data_logging', Enable)
+  dataLoggerEnable = rospy.ServiceProxy('data_logging', Enable) #*
   dataLoggerEnable(False) # reset Data Logger just in case
   rospy.sleep(1)
   file_help.clearTmpFolder()        # clear the temporary folder
@@ -255,7 +255,7 @@ def main(args):
         targetOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2+pi/36*i,'sxyz') #static (s) rotating (r)
         targetPose = rtde_help.getPoseObj(engagePosition, targetOrientation)
         rtde_help.goToPose(targetPose)
-        targetPWM_Pub.publish(DUTYCYCLE_100)
+        targetPWM_Pub.publish(DUTYCYCLE_100) 
 
         # start data logging
         print("Start to record data")
@@ -264,7 +264,7 @@ def main(args):
         syncPub.publish(SYNC_START)
         rospy.sleep(1) # default is 2
         P_init = P_help.four_pressure
-        F_normal = FT_help.averageFz_noOffset
+        F_normal = FT_help.averageFz_noOffset 
         args.normalForceActual = F_normal
         args.pressure_avg = P_init
         P_vac = P_help.P_vac
@@ -288,6 +288,7 @@ def main(args):
         rtde_help.goToPose(targetPose_init)
 
         # stop data logging
+<<<<<<< HEAD
         rospy.sleep(0.1)
         dataLoggerEnable(False)
         rospy.sleep(0.1)    
@@ -296,6 +297,15 @@ def main(args):
         file_help.saveDataParams(args, appendTxt='jp_lateral_'+'corner_' + str(args.corner)+'_xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta)+'_material_' + str(args.material))
         # file_help.saveDataParams(args, appendTxt='sdl_lateral_' +'xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta))
         file_help.clearTmpFolder()
+=======
+        rospy.sleep(0.2)
+        dataLoggerEnable(False) #*
+        rospy.sleep(0.2)    
+
+        # save data and clear the temporary folder
+        file_help.saveDataParams(args, appendTxt='jp_lateral_'+'xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta)) #*
+        file_help.clearTmpFolder()#*
+>>>>>>> 49ac72881ac72d1dc21a0ce9056213b64fe0de9d
         P_help.stopSampling()
         rospy.sleep(0.1) # default is 0.5
         if SuctionFlag == True:

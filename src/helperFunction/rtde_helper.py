@@ -18,6 +18,7 @@ from .utils import create_transform_matrix
 import rtde_control
 import rtde_receive
 
+from tf.transformations import quaternion_matrix
 
 from scipy.spatial.transform import Rotation as R
 import copy
@@ -119,6 +120,30 @@ class rtdeHelp(object):
         z = pose.pose.position.z
         Rx, Ry, Rz = self.getRotVector(pose)
         return [x, y, z, Rx, Ry, Rz]
+    
+    def speedl(self, goalPose,speed=0.5, acc=0.5, time=0.5, aRot='a'):
+
+        if len(goalPose) != 6:
+            raise ValueError("Target pose must have 6 elements: [x, y, z, Rx, Ry, Rz]")
+        try:
+        # Perform linear motion using moveL function
+            self.rtde_c.speedL(goalPose, self.speed, self.acc, time, aRot)
+        except Exception as e:
+            print(f"Error occurred during linear motion: {e}")
+    
+    def getTCPForce(self): # gets (Force/Torque vector) at the TCP
+        wrench=self.rtde_r.getActualTCPForce()
+        F_x=wrench[0]
+        F_y=wrench[1]
+        F_z=wrench[2]
+        F_m=np.sqrt(F_x**2+F_y**2+F_z**2) #magnitude of forces
+        mass=F_m/9.81 #convert to kg
+        return [F_x, F_y, F_z, F_m, mass]
+    
+
+    def setPayload(self, payload, CoG):
+        # Assuming method is avalible within RTDEControlInterface
+        self.rtde_c.set_payload(payload, CoG)
 
     def goToPositionOrientation(self, goalPosition, setOrientation, asynchronous = False):
         self.goToPose(self.getPoseObj(goalPosition, setOrientation))
@@ -133,6 +158,7 @@ class rtdeHelp(object):
         # speed = self.speed
         # acc = self.acc
         self.rtde_c.moveL(targetPose, speed, acc, asynchronous)
+<<<<<<< HEAD
     
     def getTCPForce(self):
         wrench = self.rtde_c.getActualTCPForce()
@@ -154,6 +180,18 @@ class rtdeHelp(object):
             distance_threshold=0.1
             if self.checkGoalPoseReached(goalPose, checkDistThres=distance_threshold):
                 self.rtde_c.speedL([0,0,0,0,0,0], acc)
+=======
+        
+    def goToPose2(self, goalPose, speed=0.0, acc=0.0, asynchronous=False):
+        pose = self.getTransformedPose(goalPose)
+        targetPose = self.getTCPPose(pose)
+        speed= self.speed
+        self.rtde_c.moveL(targetPose, speed, acc, asynchronous)
+        while not self.checkGoalPoseReached(goalPose):
+            distance_threshold = 0.07
+            if self.checkGoalPoseReached(goalPose, checkDistThres=distance_threshold):
+                self.rtde_c.speedL([0, 0, 0, 0, 0, 0], acc)  # using speedL to stop once it reached distance threshold
+>>>>>>> 49ac72881ac72d1dc21a0ce9056213b64fe0de9d
                 break
     # def goToPose(self, goalPose, speed = 0.05, acc = 0.01,  timeCoeff = 10, lookahead_time = 0.1, gain = 200.0):
     #     # lookahead_time range [0.03 0.2]
