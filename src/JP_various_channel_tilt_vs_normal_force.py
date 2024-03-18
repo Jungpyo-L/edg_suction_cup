@@ -85,6 +85,8 @@ def main(args):
   # Set the TCP offset and calibration matrix
   rospy.sleep(0.5)
   rtde_help.setTCPoffset([0, 0, 0.150, 0, 0, 0])
+  if args.ch == 6:
+    rtde_help.setTCPoffset([0, 0, 0.150 + 0.02, 0, 0, 0])
   rospy.sleep(0.2)
   rtde_help.setCalibrationMatrix()
   rospy.sleep(0.2)
@@ -128,104 +130,112 @@ def main(args):
     rospy.sleep(0.1)
 
     
+    # change yaw angle
+    for yaw in range(0, 360//args.ch, 360//args.ch//3):
+      # if yaw == 0:
+      #   continue
+      args.yaw = yaw
+      # args.yaw = 90
+      # change tile angle
+      for tilt in range(0, 31, 5):
+        args.tilt = tilt
+        print("tilt: ", tilt)
+        setOrientation = tf.transformations.quaternion_from_euler(pi+args.tilt*pi/180,0,pi/2,'sxyz') #static (s) rotating (r)
+        if args.yaw != 0:
+          setOrientation = tf.transformations.quaternion_from_euler(-pi/2 - pi/180 * args.yaw, pi, args.tilt*pi/180,'szxy') #static (s) rotating (r)
 
-    # change tile angle
-    for tilt in range(0, 31, 5):
-      args.tilt = tilt
-      print("tilt: ", tilt)
-      setOrientation = tf.transformations.quaternion_from_euler(pi+args.tilt*pi/180,0,pi/2 + pi/180 * args.yaw,'sxyz') #static (s) rotating (r)
+        disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
+        rtde_help.goToPose(disEngagePose)
+        rospy.sleep(0.3)
+        P_help.startSampling()      
+        rospy.sleep(0.5)
+        FT_help.setNowAsBias()
+        P_help.setNowAsOffset()
+        Fz_offset = FT_help.averageFz
+        
+        for normal_thresh in F_normalThres:
+          args.normalForce = normal_thresh
+
+          print("Start to go normal to get engage point")
+          print("normal_thresh: ", normal_thresh)
+          dataLoggerEnable(True)
+          rospy.sleep(0.3) # default is 0.5
+
+          print("move along normal")
+          targetPose = rtde_help.getCurrentPose()
+
+          # flags and variables
+          farFlag = True
+          args.SuctionFlag = False
+          
+          # slow approach until it reach suction engage
+          F_normal = FT_help.averageFz_noOffset
+          targetPoseEngaged = rtde_help.getCurrentPose()
+          # targetPWM_Pub.publish(DUTYCYCLE_0)
+          syncPub.publish(SYNC_START)
+          while farFlag:
+            if F_normal > -args.normalForce:
+              T_move = adpt_help.get_Tmat_TranlateInZ(direction = 1)
+              targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPose)
+              rtde_help.goToPoseAdaptive(targetPose, time = 0.1)
+              F_normal = FT_help.averageFz_noOffset
+              args.normalForceActual = F_normal
+              rospy.sleep(0.1)
+
+            else:
+              farFlag = False
+              rtde_help.stopAtCurrPoseAdaptive()
+              print("reached threshhold normal force: ", F_normal)
+              args.normalForceUsed= F_normal
+              rospy.sleep(0.1)
+              syncPub.publish(SYNC_STOP)
+              rospy.sleep(0.2)
+
+          # check if suction engage is successful
+          targetPWM_Pub.publish(DUTYCYCLE_100)
+          rospy.sleep(1)
+          P_init = P_help.four_pressure
+          args.pressure_avg = P_init
+          P_vac = P_help.P_vac
+
+          # check if suction engage is successful
+          if all(np.array(P_init)[0:args.ch]<P_vac):
+            print("Suction Engage Succeed!!")
+            args.SuctionFlag = True
+            syncPub.publish(SYNC_STOP)
+          else:
+            args.SuctionFlag = False
+
+          rospy.sleep(0.1)
+          targetPWM_Pub.publish(DUTYCYCLE_0)
+          rospy.sleep(0.1)
+                
+          syncPub.publish(SYNC_STOP)
+          print("Go to disengage point")
+          rtde_help.goToPose(disEngagePose)
+          rospy.sleep(0.5)
+
+          # stop data logging
+          rospy.sleep(0.2)
+          dataLoggerEnable(False)
+          rospy.sleep(0.2)
+          targetPWM_Pub.publish(DUTYCYCLE_0)
+
+
+          # save data and clear the temporary folder
+          file_help.saveDataParams(args, appendTxt='jp_various_suction_cup_tilt_normal_'+'ch_' + str(args.ch)+'_tilt_' + str(args.tilt)+'_normal_' + str(args.normalForce)+'_material_' + str(args.material)+'_yaw_' + str(args.yaw))
+          file_help.clearTmpFolder()
+
+          if args.SuctionFlag:
+            break
+
+
+      print("Go to disengage point")
+      setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
       disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
       rtde_help.goToPose(disEngagePose)
+      # cartesian_help.goToPose(disEngagePose,wait=True)
       rospy.sleep(0.3)
-      P_help.startSampling()      
-      rospy.sleep(0.5)
-      FT_help.setNowAsBias()
-      P_help.setNowAsOffset()
-      Fz_offset = FT_help.averageFz
-      
-      for normal_thresh in F_normalThres:
-        args.normalForce = normal_thresh
-
-        print("Start to go normal to get engage point")
-        print("normal_thresh: ", normal_thresh)
-        dataLoggerEnable(True)
-        rospy.sleep(0.3) # default is 0.5
-
-        print("move along normal")
-        targetPose = rtde_help.getCurrentPose()
-
-        # flags and variables
-        farFlag = True
-        args.SuctionFlag = False
-        
-        # slow approach until it reach suction engage
-        F_normal = FT_help.averageFz_noOffset
-        targetPoseEngaged = rtde_help.getCurrentPose()
-        # targetPWM_Pub.publish(DUTYCYCLE_0)
-        syncPub.publish(SYNC_START)
-        while farFlag:
-          if F_normal > -args.normalForce:
-            T_move = adpt_help.get_Tmat_TranlateInZ(direction = 1)
-            targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPose)
-            rtde_help.goToPoseAdaptive(targetPose, time = 0.1)
-            F_normal = FT_help.averageFz_noOffset
-            args.normalForceActual = F_normal
-            rospy.sleep(0.1)
-
-          else:
-            farFlag = False
-            rtde_help.stopAtCurrPoseAdaptive()
-            print("reached threshhold normal force: ", F_normal)
-            args.normalForceUsed= F_normal
-            rospy.sleep(0.1)
-            syncPub.publish(SYNC_STOP)
-            rospy.sleep(0.2)
-
-        # check if suction engage is successful
-        targetPWM_Pub.publish(DUTYCYCLE_100)
-        rospy.sleep(1)
-        P_init = P_help.four_pressure
-        args.pressure_avg = P_init
-        P_vac = P_help.P_vac
-
-        # check if suction engage is successful
-        if all(np.array(P_init)[0:args.ch]<P_vac):
-          print("Suction Engage Succeed!!")
-          args.SuctionFlag = True
-          syncPub.publish(SYNC_STOP)
-        else:
-          args.SuctionFlag = False
-
-        rospy.sleep(0.1)
-        targetPWM_Pub.publish(DUTYCYCLE_0)
-        rospy.sleep(0.1)
-              
-        syncPub.publish(SYNC_STOP)
-        print("Go to disengage point")
-        rtde_help.goToPose(disEngagePose)
-        rospy.sleep(0.5)
-
-        # stop data logging
-        rospy.sleep(0.2)
-        dataLoggerEnable(False)
-        rospy.sleep(0.2)
-        targetPWM_Pub.publish(DUTYCYCLE_0)
-
-
-        # save data and clear the temporary folder
-        file_help.saveDataParams(args, appendTxt='jp_various_suction_cup_tilt_normal_'+'ch_' + str(args.ch)+'_tilt_' + str(args.tilt)+'_normal_' + str(args.normalForce)+'_material_' + str(args.material)+'_yaw_' + str(args.yaw))
-        file_help.clearTmpFolder()
-
-        if args.SuctionFlag:
-          break
-
-
-      # print("Go to disengage point")
-      # setOrientation = tf.transformations.quaternion_from_euler(pi,args.tilt*pi/180,pi/2,'sxyz') #static (s) rotating (r)
-      # disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
-      # rtde_help.goToPose(disEngagePose)
-      # # cartesian_help.goToPose(disEngagePose,wait=True)
-      # rospy.sleep(0.3)
 
 
 

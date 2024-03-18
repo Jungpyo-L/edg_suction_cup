@@ -123,7 +123,7 @@ def main(args):
   xoffset = args.xoffset
   # disengagePosition_init =  [-0.711, .107, 0.020] # seb
 
-  disengagePosition_init =  [-0.6205, .280, 0.0165] # unit is in m
+  disengagePosition_init =  [-0.6225, .280, 0.0185] # unit is in m
   if args.ch == 6:
     disengagePosition_init[2] += 0.02
   elif args.newCup == True:
@@ -288,7 +288,6 @@ def main(args):
         rtde_help.goToPose(targetPose_init)
 
         # stop data logging
-<<<<<<< HEAD
         rospy.sleep(0.1)
         dataLoggerEnable(False)
         rospy.sleep(0.1)    
@@ -297,15 +296,6 @@ def main(args):
         file_help.saveDataParams(args, appendTxt='jp_lateral_'+'corner_' + str(args.corner)+'_xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta)+'_material_' + str(args.material))
         # file_help.saveDataParams(args, appendTxt='sdl_lateral_' +'xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta))
         file_help.clearTmpFolder()
-=======
-        rospy.sleep(0.2)
-        dataLoggerEnable(False) #*
-        rospy.sleep(0.2)    
-
-        # save data and clear the temporary folder
-        file_help.saveDataParams(args, appendTxt='jp_lateral_'+'xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta)) #*
-        file_help.clearTmpFolder()#*
->>>>>>> 49ac72881ac72d1dc21a0ce9056213b64fe0de9d
         P_help.stopSampling()
         rospy.sleep(0.1) # default is 0.5
         if SuctionFlag == True:

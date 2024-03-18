@@ -149,16 +149,15 @@ class rtdeHelp(object):
         self.goToPose(self.getPoseObj(goalPosition, setOrientation))
 
     # def goToPose(self, goalPose, speed = 2.5, acc = 1.7, asynchronous=False):
-    # def goToPose(self, goalPose, speed = 0.1, acc = 0.1, asynchronous=False):     # original? need for edge following
+    def goToPose(self, goalPose, speed = 0.1, acc = 0.1, asynchronous=False):     # original? need for edge following
     # def goToPose(self, goalPose, speed = 0.05, acc = 0.01, asynchronous=False):    # try this!
-    def goToPose(self, goalPose, speed = 0.3, acc = 1.7, asynchronous=False):        # seb experimenting
+    # def goToPose(self, goalPose, speed = 0.3, acc = 1.7, asynchronous=False):        # seb experimenting
     # def goToPose(self, goalPose, speed = 0.25, acc = 0.15, asynchronous=False):          # Alahe
         pose = self.getTransformedPose(goalPose)
         targetPose = self.getTCPPose(pose)
         # speed = self.speed
         # acc = self.acc
         self.rtde_c.moveL(targetPose, speed, acc, asynchronous)
-<<<<<<< HEAD
     
     def getTCPForce(self):
         wrench = self.rtde_c.getActualTCPForce()
@@ -180,7 +179,6 @@ class rtdeHelp(object):
             distance_threshold=0.1
             if self.checkGoalPoseReached(goalPose, checkDistThres=distance_threshold):
                 self.rtde_c.speedL([0,0,0,0,0,0], acc)
-=======
         
     def goToPose2(self, goalPose, speed=0.0, acc=0.0, asynchronous=False):
         pose = self.getTransformedPose(goalPose)
@@ -191,7 +189,6 @@ class rtdeHelp(object):
             distance_threshold = 0.07
             if self.checkGoalPoseReached(goalPose, checkDistThres=distance_threshold):
                 self.rtde_c.speedL([0, 0, 0, 0, 0, 0], acc)  # using speedL to stop once it reached distance threshold
->>>>>>> 49ac72881ac72d1dc21a0ce9056213b64fe0de9d
                 break
     # def goToPose(self, goalPose, speed = 0.05, acc = 0.01,  timeCoeff = 10, lookahead_time = 0.1, gain = 200.0):
     #     # lookahead_time range [0.03 0.2]

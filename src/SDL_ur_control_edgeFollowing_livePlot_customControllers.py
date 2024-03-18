@@ -104,8 +104,8 @@ def line_parameters(P_alpha, alpha, P_beta, beta):
 def main(args):
   #========================== Edge Following knobs to tune =============================
 
-  d_lat = 7.50e-3
-  beta = 1.5
+  d_lat = 5.0e-3
+  beta = 3.0
 
   # P_ref = 40
   # start_offset = 32e-3
@@ -116,8 +116,9 @@ def main(args):
   # P_ref = 100
   # start_offset = 31.0e-3
 
-  P_ref = 100
+  P_ref = 150
   start_offset = 31.5e-3
+  # start_offset = 0e-3
 
   # P_ref = 150
   # start_offset = 31e-3
@@ -178,8 +179,9 @@ def main(args):
   d_z = 0.02e-3
 
   #========================== User Input================================================
-
-  engagePosition =  [-630e-3, 97e-3, 15e-3]   # 35mm disk
+  # engagePosition =  [-355e-3, 189e-3, 19e-3]   # 3D fillet
+  # engagePosition =  [-450e-3, 100e-3, 15e-3]   # compound geometries
+  engagePosition =  [-629e-3, 97e-3, 15e-3]   # 35mm disk
   # engagePosition =  [- (600e-3 - 6e-3), 76e-3, 18e-3]   # 3D fillet
   # engagePosition =  [- (600e-3 - 60e-3), 176e-3, 15e-3]   # disks and holes
   # engagePosition =  [-500e-3, 200e-3, 12e-3]   # 1/4"

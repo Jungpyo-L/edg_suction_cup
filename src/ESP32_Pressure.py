@@ -54,11 +54,11 @@ def main():
                 rospy.sleep(0.01)
                 ser.write(struct.pack('<B', ord("s")))
                 rospy.sleep(0.01)
-
                 while not CMD_in == IDLE_CMD and not rospy.is_shutdown():
                     ser_bytes = ser.readline().decode("utf-8")
                     # print("ser_bytes: ", ser_bytes)
                     split_data = ser_bytes.split(' ')
+                    # print("sizeof_split_data: ", len(split_data))
                     first_val = split_data[0]
                     # print("first_vale: ", first_val)
                     second_val = split_data[1]
