@@ -42,27 +42,15 @@ from scipy import signal
 
 from math import pi, cos, sin, floor
 
-from helperFunction.SuctionP_callback_helper import P_CallbackHelp
 from helperFunction.FT_callback_helper import FT_CallbackHelp
 from helperFunction.fileSaveHelper import fileSaveHelp
 from helperFunction.rtde_helper import rtdeHelp
 from helperFunction.adaptiveMotion import adaptMotionHelp
 
-def calculate_distance(current_position, target_position):
-    return ((current_position[0] - target_position[0])**2 +
-            (current_position[1] - target_position[1])**2 +
-            (current_position[2] - target_position[2])**2) ** 0.5
 
 def main(args):
 
   deg2rad = np.pi / 180.0
-  DUTYCYCLE_100 = 100
-  DUTYCYCLE_30 = 30
-  DUTYCYCLE_0 = 0
-
-  SYNC_RESET = 0
-  SYNC_START = 1
-  SYNC_STOP = 2
 
   F_normalThres = [0.5]
   args.normalForce_thres = F_normalThres
@@ -76,8 +64,6 @@ def main(args):
   # Setup helper functions
   FT_help = FT_CallbackHelp() # it deals with subscription.
   rospy.sleep(0.5)
-  P_help = P_CallbackHelp() # it deals with subscription.
-  rospy.sleep(0.5)
   rtde_help = rtde_help = rtdeHelp(125)
   rospy.sleep(0.5)
   file_help = fileSaveHelp()
@@ -86,9 +72,11 @@ def main(args):
   # Set the TCP offset and calibration matrix
   rospy.sleep(0.5)
   rtde_help.setTCPoffset([0, 0, 0.150, 0, 0, 0])
+  if args.ch == 6:
+    rtde_help.setTCPoffset([0, 0, 0.150 + 0.02, 0, 0, 0])
   rospy.sleep(0.2)
-  rtde_help.setCalibrationMatrix()                   # calibration matrix, causing error
-  rospy.sleep(0.2)
+  # rtde_help.setCalibrationMatrix()
+  # rospy.sleep(0.2)
 
   if FT_SimulatorOn:
     print("wait for FT simul")
@@ -96,37 +84,13 @@ def main(args):
     # bring the service
     netftSimCall = rospy.ServiceProxy('start_sim', StartSim)
 
-  # Set the PWM Publisher  
-  targetPWM_Pub = rospy.Publisher('pwm', Int8, queue_size=1)
-  targetPWM_Pub.publish(DUTYCYCLE_0)
-
-  # Set the synchronization Publisher
-  syncPub = rospy.Publisher('sync', Int8, queue_size=1)
-  syncPub.publish(SYNC_RESET)
-
-
-  print("Wait for the data_logger to be enabled")
-  rospy.wait_for_service('data_logging')
-  dataLoggerEnable = rospy.ServiceProxy('data_logging', Enable)
-  dataLoggerEnable(False) # reset Data Logger just in case
-  rospy.sleep(1)
-  file_help.clearTmpFolder()        # clear the temporary folder
-  datadir = file_help.ResultSavingDirectory
-  
   # pose initialization
-  disengagePosition_init =  [-0.605, .21, 0.025] # unit is in m
+  disengagePosition_init =  [-0.623, .28, 0.025] # unit is in m
   if args.ch == 6:
-    disengagePosition_init =  [-0.605, .21, 0.025 + 0.02] # unit is in m
+    disengagePosition_init =  [-0.63, .28, 0.025 + 0.02] # unit is in m
   setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
   disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
-  targetPWM_Pub.publish(DUTYCYCLE_0)
-  currentPose = rtde_help.getCurrentTCPPose()
 
-  current = [currentPose.pose.position.x, currentPose.pose.position.y, currentPose.pose.position.z]
-  target = [disEngagePose.pose.position.x,  disEngagePose.pose.position.y,  disEngagePose.pose.position.z]
-
-  distance=0
-  distance = calculate_distance(current, target)
   # try block so that we can have a keyboard exception
   try:
     # Go to disengage Pose
@@ -134,26 +98,14 @@ def main(args):
     rtde_help.goToPose(disEngagePose)
     rospy.sleep(0.1)
 
-    if not distance <0.01: 
-      current_pose = rtde_help.getCurrentTCPPose() #attempt to get updated pose as the UR10 is moving
-      current1 = [current_pose.pose.position.x, current_pose.pose.position.y, current_pose.pose.position.z]
-      target1 = [disEngagePose.pose.position.x,  disEngagePose.pose.position.y,  disEngagePose.pose.position.z]
-      print("Current pose is: ", current1)
-      print("calculated distance: ", calculate_distance(current1, target1)) 
-
-    # change tile angle
     for tilt in range(0, 21, 5):
       args.tilt = tilt
       print("tilt: ", tilt)
-      setOrientation = tf.transformations.quaternion_from_euler(pi+args.tilt*pi/180,0,pi/2,'sxyz') #static (s) rotating (r)
+      # setOrientation = tf.transformations.quaternion_from_euler(pi+args.tilt*pi/180,0,pi/2,'sxyz') #static (s) rotating (r)
+      setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz')
       disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
-      ################3 GO to POse
       rtde_help.goToPose(disEngagePose)
-      rospy.sleep(0.3)
-      P_help.startSampling()      
-      rospy.sleep(0.5)
       FT_help.setNowAsBias()
-      P_help.setNowAsOffset()
       Fz_offset = FT_help.averageFz
       
       for normal_thresh in F_normalThres:
@@ -161,7 +113,6 @@ def main(args):
 
         print("Start to go normal to get engage point")
         print("normal_thresh: ", normal_thresh)
-        dataLoggerEnable(True)
         rospy.sleep(0.3) # default is 0.5
 
         print("move along normal")
@@ -174,17 +125,15 @@ def main(args):
         # slow approach until it reach suction engage
         F_normal = FT_help.averageFz_noOffset
         targetPoseEngaged = rtde_help.getCurrentPose()
-        # targetPWM_Pub.publish(DUTYCYCLE_0)
-        syncPub.publish(SYNC_START)
+
         while farFlag:
           if F_normal > -args.normalForce:
             T_move = adpt_help.get_Tmat_TranlateInZ(direction = 1)
             targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPose)
-            #########33 Goto pose adaptive #######
             rtde_help.goToPoseAdaptive(targetPose, time = 0.1)
             F_normal = FT_help.averageFz_noOffset
             args.normalForceActual = F_normal
-            rospy.sleep(0.1)
+            # rospy.sleep(0.1)
 
           else:
             farFlag = False
@@ -192,65 +141,23 @@ def main(args):
             print("reached threshhold normal force: ", F_normal)
             args.normalForceUsed= F_normal
             rospy.sleep(0.1)
-            syncPub.publish(SYNC_STOP)
             rospy.sleep(0.2)
 
-        # check if suction engage is successful
-        targetPWM_Pub.publish(DUTYCYCLE_100)
-        rospy.sleep(1)
-        P_init = P_help.four_pressure
-        args.pressure_avg = P_init
-        P_vac = P_help.P_vac
-
-        # check if suction engage is successful
-        if all(np.array(P_init)[0:args.ch]<P_vac):
-          print("Suction Engage Succeed!!")
-          args.SuctionFlag = True
-          syncPub.publish(SYNC_STOP)
-        else:
-          args.SuctionFlag = False
-
-        rospy.sleep(0.1)
-        targetPWM_Pub.publish(DUTYCYCLE_0)
-        rospy.sleep(0.1)
-              
-        syncPub.publish(SYNC_STOP)
         print("Go to disengage point")
         rtde_help.goToPose(disEngagePose)
         rospy.sleep(0.5)
-
-        # stop data logging
-        rospy.sleep(0.2)
-        dataLoggerEnable(False)
-        rospy.sleep(0.2)
-        targetPWM_Pub.publish(DUTYCYCLE_0)
-
-
-        # save data and clear the temporary folder
-        # file_help.saveDataParams(args, appendTxt='jp_various_suction_cup_tilt_normal_'+'ch_' + str(args.ch)+'_tilt_' + str(args.tilt)+'_normal_' + str(args.normalForce)+'_formlab_' + str(args.formlab))
-        file_help.clearTmpFolder()
 
         if args.SuctionFlag:
           break
 
 
-      # print("Go to disengage point")
-      # setOrientation = tf.transformations.quaternion_from_euler(pi,args.tilt*pi/180,pi/2,'sxyz') #static (s) rotating (r)
-      # disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
-      # rtde_help.goToPose(disEngagePose)
-      # # cartesian_help.goToPose(disEngagePose,wait=True)
-      # rospy.sleep(0.3)
+      print("Go to disengage point")
+      setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
+      disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
+      rtde_help.goToPose(disEngagePose)
+      # cartesian_help.goToPose(disEngagePose,wait=True)
+      rospy.sleep(0.3)
 
-
-
-    print("============ Stopping data logger ...")
-    print("before dataLoggerEnable(False)")
-    print(dataLoggerEnable(False)) # Stop Data Logging
-    print("after dataLoggerEnable(False)")
-    
-
-    # P_help.stopSampling()
-    print("initial distance: ", distance)
 
     print("============ Python UR_Interface demo complete!")
   
@@ -273,8 +180,9 @@ if __name__ == '__main__':
   parser.add_argument('--normalForce', type=float, help='normal force', default= 5)
   parser.add_argument('--zHeight', type=bool, help='use presset height mode? (rather than normal force)', default= False)
   parser.add_argument('--ch', type=int, help='number of channel', default= 4)
-  parser.add_argument('--formlab', type=int, help='formlab', default= 1)
+  parser.add_argument('--material', type=int, help='MOldmax: 0, Elastic50: 1, agilus30: 2', default= 1)
   parser.add_argument('--tilt', type=int, help='tilted angle of the suction cup', default= 0)
+  parser.add_argument('--yaw', type=int, help='yaw angle of the suction cup', default= 0)
 
 
   args = parser.parse_args()    

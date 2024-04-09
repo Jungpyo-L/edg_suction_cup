@@ -123,7 +123,7 @@ def main(args):
   xoffset = args.xoffset
   # disengagePosition_init =  [-0.711, .107, 0.020] # seb
 
-  disengagePosition_init =  [-0.6225, .280, 0.0185] # unit is in m
+  disengagePosition_init =  [-0.621, .280, 0.0165] # unit is in m
   if args.ch == 6:
     disengagePosition_init[2] += 0.02
   elif args.newCup == True:

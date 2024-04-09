@@ -88,8 +88,8 @@ def main(args):
   if args.ch == 6:
     rtde_help.setTCPoffset([0, 0, 0.150 + 0.02, 0, 0, 0])
   rospy.sleep(0.2)
-  rtde_help.setCalibrationMatrix()
-  rospy.sleep(0.2)
+  # rtde_help.setCalibrationMatrix()
+  # rospy.sleep(0.2)
 
   if FT_SimulatorOn:
     print("wait for FT simul")
@@ -115,7 +115,7 @@ def main(args):
   datadir = file_help.ResultSavingDirectory
   
   # pose initialization
-  disengagePosition_init =  [-0.63, .28, 0.025] # unit is in m
+  disengagePosition_init =  [-0.623, .28, 0.025] # unit is in m
   if args.ch == 6:
     disengagePosition_init =  [-0.63, .28, 0.025 + 0.02] # unit is in m
   setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)

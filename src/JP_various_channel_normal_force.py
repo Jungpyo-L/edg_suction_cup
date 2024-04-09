@@ -112,7 +112,7 @@ def main(args):
   
   # pose initialization
   xoffset = args.xoffset
-  disengagePosition_init =  [-0.625, .280, 0.0185] # unit is in m
+  disengagePosition_init =  [-0.625, .280, 0.0175] # unit is in m
   # if args.ch == 6:
   #   disengagePosition_init[2] += 0.02
   setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
