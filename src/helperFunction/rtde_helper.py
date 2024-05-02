@@ -83,7 +83,7 @@ class rtdeHelp(object):
         return Pose
 
     def setCalibrationMatrix(self):
-        g1 = adpt_help.get_Tmat_from_Pose(self.getCurrentPoseTF())
+        g1 = adpt_help.get_Tmat_from_Pose(self.getCurrentTCPPose())
         g2 = adpt_help.get_Tmat_from_Pose(self.getCurrentTCPPose())
         # gt = np.matmul(np.linalg.inv(g1), g2)
         gt = np.matmul(g1, np.linalg.inv(g2))
@@ -162,7 +162,7 @@ class rtdeHelp(object):
         self.rtde_c.moveL(targetPose, speed, acc, asynchronous)
     
     # def getTCPForce(self):
-    #     wrench = self.rtde_c.getActualTCPForce()
+    #     wrench = self.rtde_r.getActualTCPForce()
     #     F_x = wrench[0]
     #     F_y = wrench[1]
     #     F_z = wrench[2]
@@ -171,32 +171,23 @@ class rtdeHelp(object):
     #     return [F_x, F_y, F_z, F_m, mass]
     
 
-    def goToPose2(self, goalPose, speed = 0.0, acc = 0.0, asynchronous=False):
-        pose = self.getTransformedPose(goalPose)
-        targetPose = self.getTCPPose(pose)
-        speed = self.speed
-        # acc = self.acc
-        self.rtde_c.moveL(targetPose, speed, acc, asynchronous) 
-        while not self.checkGoalPoseReached(goalPose):
-            distance_threshold=0.1
-            if self.checkGoalPoseReached(goalPose, checkDistThres=distance_threshold):
-                self.rtde_c.speedL([0,0,0,0,0,0], acc)
-    def goToPose3(self, goalPose, speed = 0.1, acc = 0.1, asynchronous=False):    
-        targetPose = [0.555, 0.1, 0.035, 0, 0, 1.57]
-        # speed = self.speed
-        # acc = self.acc
-        self.rtde_c.moveL(targetPose, speed, acc, asynchronous)
+    # def goToPoseAdaptive(self, goalPose, speed = 0.0, acc = 0.0,  time = 0.05, lookahead_time = 0.2, gain = 100.0): # normal force measurement
+    # # def goToPoseAdaptive(self, goalPose, speed = 0.02, acc = 0.02,  time = 0.05, lookahead_time = 0.05, gain = 200.0):
+    # # def goToPoseAdaptive(self, goalPose, speed = 0.0, acc = 0.0,  time = 0.05, lookahead_time = 0.2, gain = 200.0):
+    #     # lookahead_time range [0.03 0.2]
+    #     # grain range [100 2000]
+    #     t_start = self.rtde_c.initPeriod()
+    #     pose = self.getTransformedPose(goalPose)
+    #     targetPose = self.getTCPPose(pose)
+    #     currentPose = self.getTCPPose(self.rtde_r.getActualTCPPose())
+    #     # print("targetPose-currentPose", np.array(targetPose)-np.array(currentPose))
+    #     pose_diff_norm = np.linalg.norm(np.array(targetPose[0:3])-np.array(currentPose[0:3]))
+    #     # if pose_diff_norm  > 0.001:
+    #     #     print("norm of pose difference: ", pose_diff_norm)
 
-
-    def goToPose4(self, goalPose, speed = 0.05, acc = 0.15, asynchronous=False):          # Alahe
-        pose = self.getTransformedPose(goalPose)
-        targetPose = self.getTCPPose(pose)
-        # pose2= self.getTransformedPoseInv(targetPose)
-        # targetPose2 = self.getTCPPose(pose2)
-        # speed = self.speed
-        # acc = self.acc
-        for i in range(3):
-            self.rtde_c.moveL(targetPose, speed, acc, asynchronous)
+    #     self.rtde_c.servoL(targetPose, speed, acc, time, lookahead_time, gain)
+    #     # rospy.sleep(0.01)
+    #     self.rtde_c.waitPeriod(t_start)
             
     # def goToPose2(self, goalPose, speed=0.0, acc=0.0, asynchronous=False):
     #     pose = self.getTransformedPose(goalPose)
@@ -255,7 +246,8 @@ class rtdeHelp(object):
         t_start = self.rtde_c.initPeriod()
         pose = self.getTransformedPose(goalPose)
         targetPose = self.getTCPPose(pose)
-        currentPose = self.getTCPPose(self.getCurrentTCPPose())
+        # currentPose = self.getTCPPose(self.getCurrentTCPPose())
+        currentPose = self.getTCPPose(self.rtde_r.getActualTCPPose())
         # print("targetPose-currentPose", np.array(targetPose)-np.array(currentPose))
         pose_diff_norm = np.linalg.norm(np.array(targetPose[0:3])-np.array(currentPose[0:3]))
         # if pose_diff_norm  > 0.001:
@@ -282,7 +274,7 @@ class rtdeHelp(object):
         self.rtde_c.waitPeriod(t_start)
         
     def readCurrPositionQuat(self):
-        (trans1,rot) = self.tfListener.lookupTransform('/base_link', '/tool0', rospy.Time(0))          
+        (trans1,rot) = self.tfListener.lookupTransform('/base_link', '/tool0', rospy.Time(0))         
         return (trans1, rot) #trans1= position x,y,z, // quaternion: x,y,z,w
 
     def stopAtCurrPose(self,asynchronous = True):

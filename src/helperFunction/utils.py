@@ -6,6 +6,7 @@ Author: Chris Correa.
 Adapted for Spring 2020 by Amay Saxena
 """
 import numpy as np
+import math
 from scipy.spatial.transform import Rotation
 
 def find_intersections(mesh, p1, p2):
@@ -204,7 +205,7 @@ def create_transform_matrix(rotation_matrix, translation_vector):
     """
     return np.r_[np.c_[rotation_matrix, translation_vector],[[0, 0, 0, 1]]]
 
-def rotation_from_quaternion(q_xyzw):
+def rotation_from_quaternion(q_xyzw):   #original
     """Convert quaternion array to rotation matrix.
     Parameters
     ----------
@@ -226,8 +227,47 @@ def rotation_from_quaternion(q_xyzw):
         mat = r.as_matrix()
     return mat
 
+def rotationFromQuaternion(Q):   #Apr 26th update
+    """
+    Covert a quaternion into a full three-dimensional rotation matrix.
+    Input
+    :param Q: A 4 element array representing the quaternion (q0,q1,q2,q3) 
+    Output
+    :return: A 3x3 element matrix representing the full 3D rotation matrix. 
+    This rotation matrix converts a point in the local reference 
+    frame to a point in the global reference frame.
+    """
+    # Extract the values from Q
+    # q0 = Q[0]
+    # q1 = Q[1]
+    # q2 = Q[2]
+    # q3 = Q[3]
+    q0 = Q[3]
+    q1 = Q[0]
+    q2 = Q[1]
+    q3 = Q[2]
+    # First row of the rotation matrix
+    r00 = 2 * (q0 * q0 + q1 * q1) - 1
+    r01 = 2 * (q1 * q2 - q0 * q3)
+    r02 = 2 * (q1 * q3 + q0 * q2)
 
-def quaternion_from_matrix(matrix):
+    # Second row of the rotation matrix
+    r10 = 2 * (q1 * q2 + q0 * q3)
+    r11 = 2 * (q0 * q0 + q2 * q2) - 1
+    r12 = 2 * (q2 * q3 - q0 * q1)
+
+    # Third row of the rotation matrix
+    r20 = 2 * (q1 * q3 - q0 * q2)
+    r21 = 2 * (q2 * q3 + q0 * q1)
+    r22 = 2 * (q0 * q0 + q3 * q3) - 1
+
+    # 3x3 rotation matrix
+    rot_matrix = np.array([[r00, r01, r02],[r10, r11, r12],
+[r20, r21, r22]])
+                            
+    return rot_matrix
+
+def quaternion_from_matrix(matrix):   #original
     """Return quaternion from rotation matrix.
     >>> R = rotation_matrix(0.123, (1, 2, 3))
     >>> q = quaternion_from_matrix(R)
@@ -239,6 +279,86 @@ def quaternion_from_matrix(matrix):
     except:
         r = Rotation.from_matrix(matrix)
     return r.as_quat()
+
+def quaternionFromMatrix(matrix, isprecise=False): #Apr 26th update
+    """Return quaternion from rotation matrix.
+
+    If isprecise is True, the input matrix is assumed to be a precise rotation
+    matrix and a faster algorithm is used.
+
+    >>> q = quaternion_from_matrix(numpy.identity(4), True)
+    >>> numpy.allclose(q, [1, 0, 0, 0])
+    True
+    >>> q = quaternion_from_matrix(numpy.diag([1, -1, -1, 1]))
+    >>> numpy.allclose(q, [0, 1, 0, 0]) or numpy.allclose(q, [0, -1, 0, 0])
+    True
+    >>> R = rotation_matrix(0.123, (1, 2, 3))
+    >>> q = quaternion_from_matrix(R, True)
+    >>> numpy.allclose(q, [0.9981095, 0.0164262, 0.0328524, 0.0492786])
+    True
+    >>> R = [[-0.545, 0.797, 0.260, 0], [0.733, 0.603, -0.313, 0],
+    ...      [-0.407, 0.021, -0.913, 0], [0, 0, 0, 1]]
+    >>> q = quaternion_from_matrix(R)
+    >>> numpy.allclose(q, [0.19069, 0.43736, 0.87485, -0.083611])
+    True
+    >>> R = [[0.395, 0.362, 0.843, 0], [-0.626, 0.796, -0.056, 0],
+    ...      [-0.677, -0.498, 0.529, 0], [0, 0, 0, 1]]
+    >>> q = quaternion_from_matrix(R)
+    >>> numpy.allclose(q, [0.82336615, -0.13610694, 0.46344705, -0.29792603])
+    True
+    >>> R = random_rotation_matrix()
+    >>> q = quaternion_from_matrix(R)
+    >>> is_same_transform(R, quaternion_matrix(q))
+    True
+
+    """
+    M = np.array(matrix, dtype=np.float64, copy=False)[:4, :4]
+    if isprecise:
+        q = np.empty((4,))
+        t = np.trace(M)
+        if t > M[3, 3]:
+            q[0] = t
+            q[3] = M[1, 0] - M[0, 1]
+            q[2] = M[0, 2] - M[2, 0]
+            q[1] = M[2, 1] - M[1, 2]
+        else:
+            i, j, k = 1, 2, 3
+            if M[1, 1] > M[0, 0]:
+                i, j, k = 2, 3, 1
+            if M[2, 2] > M[i, i]:
+                i, j, k = 3, 1, 2
+            t = M[i, i] - (M[j, j] + M[k, k]) + M[3, 3]
+            q[i] = t
+            q[j] = M[i, j] + M[j, i]
+            q[k] = M[k, i] + M[i, k]
+            q[3] = M[k, j] - M[j, k]
+        q *= 0.5 / math.sqrt(t * M[3, 3])
+    else:
+        m00 = M[0, 0]
+        m01 = M[0, 1]
+        m02 = M[0, 2]
+        m10 = M[1, 0]
+        m11 = M[1, 1]
+        m12 = M[1, 2]
+        m20 = M[2, 0]
+        m21 = M[2, 1]
+        m22 = M[2, 2]
+        # symmetric matrix K
+        K = np.array(
+            [
+                [m00 - m11 - m22, 0.0, 0.0, 0.0],
+                [m01 + m10, m11 - m00 - m22, 0.0, 0.0],
+                [m02 + m20, m12 + m21, m22 - m00 - m11, 0.0],
+                [m21 - m12, m02 - m20, m10 - m01, m00 + m11 + m22],
+            ]
+        )
+        K /= 3.0
+        # quaternion is eigenvector of K that corresponds to largest eigenvalue
+        w, V = np.linalg.eigh(K)
+        q = V[[3, 0, 1, 2], np.argmax(w)]
+    if q[0] < 0.0:
+        np.negative(q, q)
+    return q
 
 def skew_3d(omega):
     """
