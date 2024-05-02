@@ -131,13 +131,13 @@ def main(args):
         
         # slow approach until it reach suction engage
         F_normal = FT_help.averageFz_noOffset
-        # targetPoseEngaged = rtde_help.getCurrentPose()
-        targetPoseEngaged = rtde_help.rtde_r.getActualTCPPose()
+        targetPoseEngaged = rtde_help.getCurrentPose()
+        # targetPoseEngaged = rtde_help.rtde_r.getActualTCPPose()
 
         while farFlag:   
           if F_normal > -args.normalForce:
-            T_move = adpt_help.get_Tmat_TranlateInZ(direction = 1)   # translate in z-dir is incorrent
-            targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPose)   #*
+            T_move = adpt_help.get_Tmat_TranlateInZ(direction = 1)   
+            targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPose)   #error
             
             # targetPose= rtde_help.rtde_r.getActualTCPPose()
             rtde_help.goToPoseAdaptive(targetPose, time = 0.1)

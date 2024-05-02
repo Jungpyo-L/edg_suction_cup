@@ -63,7 +63,7 @@ def main(args):
   rospy.sleep(0.5)
   rtde_help.setTCPoffset([0, 0, 0.150, 0, 0, 0])
   rospy.sleep(0.2)
-  rtde_help.setCalibrationMatrix()                   # calibration matrix
+  # rtde_help.setCalibrationMatrix()                   # calibration matrix
   # rospy.sleep(0.2)                                                      
 
   print('T:', rtde_help.transformation)
