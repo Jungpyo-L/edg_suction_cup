@@ -91,6 +91,10 @@ def main(args):
     # disengagePosition_init =  [-0.63, .28, 0.045]
   setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
   disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
+  print('Transformation:', rtde_help.transformation)
+  print('currentTCPPose:', rtde_help.getCurrentTCPPose())
+  print('currentPoseTF:', rtde_help.getCurrentPoseTF())
+  print('current ActualTCPPose: ',rtde_help.rtde_r.getActualTCPPose())
 
   # try block so that we can have a keyboard exception
   try:
@@ -99,12 +103,17 @@ def main(args):
     rtde_help.goToPose(disEngagePose)
     rospy.sleep(0.1)
 
+<<<<<<< HEAD
     for tilt in range(0, 5, 2): # 0, 2, 4
+=======
+    for tilt in range(0, 21, 2):
+>>>>>>> 9a1b2a66f65c075b7e9d7ed8ec0b5eda861a43f8
       args.tilt = tilt
       print("tilt: ", tilt)
       setOrientation = tf.transformations.quaternion_from_euler(pi+args.tilt*pi/180,0,pi/2,'sxyz') #static (s) rotating (r)
       # setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz')
       disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
+      print('gotopose target', disEngagePose)
       rtde_help.goToPose(disEngagePose)
       FT_help.setNowAsBias()
       Fz_offset = FT_help.averageFz
@@ -119,8 +128,13 @@ def main(args):
         print("move along normal")
         targetPose = rtde_help.getCurrentPose()
         # targetPose = rtde_help.rtde_r.getActualTCPPose()
+<<<<<<< HEAD
         # targetPose = np.array([-actual[0], -actual[1],  actual[2]])
         # print("targetPose w getActual: ", targetPose)
+=======
+        # current = np.array([-targetPose[0], -targetPose[1],  targetPose[2]])
+
+>>>>>>> 9a1b2a66f65c075b7e9d7ed8ec0b5eda861a43f8
         # flags and variables
         farFlag = True
         args.SuctionFlag = False
@@ -128,15 +142,26 @@ def main(args):
         # slow approach until it reach suction engage
         F_normal = FT_help.averageFz_noOffset
         targetPoseEngaged = rtde_help.getCurrentPose()
+<<<<<<< HEAD
         print("targetPose w getCurrent: ", targetPoseEngaged)
+=======
+        # targetPoseEngaged = rtde_help.rtde_r.getActualTCPPose()
+>>>>>>> 9a1b2a66f65c075b7e9d7ed8ec0b5eda861a43f8
 
-        while farFlag:
+        while farFlag:   
           if F_normal > -args.normalForce:
+<<<<<<< HEAD
             T_move = adpt_help.get_Tmat_TranlateInZ(direction = 1)
             targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPose)   #targetPose from transformation
             print("targetPose: ", targetPose)
+=======
+            T_move = adpt_help.get_Tmat_TranlateInZ(direction = 1)   
+            targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPose)   #error
+            
+>>>>>>> 9a1b2a66f65c075b7e9d7ed8ec0b5eda861a43f8
             # targetPose= rtde_help.rtde_r.getActualTCPPose()
             rtde_help.goToPoseAdaptive(targetPose, time = 0.1)
+            print('Adaptive target', targetPose)
             F_normal = FT_help.averageFz_noOffset
             args.normalForceActual = F_normal
             # rospy.sleep(0.1)
@@ -148,6 +173,7 @@ def main(args):
             args.normalForceUsed= F_normal
             rospy.sleep(0.1)
             rospy.sleep(0.2)
+            args.SuctionFlag = True #updating
 
         print("Go to disengage point")
         rtde_help.goToPose(disEngagePose)
