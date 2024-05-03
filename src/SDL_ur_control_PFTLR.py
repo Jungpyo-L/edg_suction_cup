@@ -78,23 +78,36 @@ from helperFunction.gqcnn_policy_class import GraspProcessor
 def main(args):
   #========================== User Input================================================
   # engagePosition =  [-586e-3, 198e-3, 35e-3 - 004e-3]
-  engagePosition =  [-570e-3 - 000e-3, 190e-3, 35e-3 - 010e-3]
-  disengagePosition = engagePosition
-  disengagePosition[2] += 10e-3
-  # disengagePosition[2] += 100e-3
+  # engagePosition =  [-584e-3 - 001e-3, 200e-3, 35e-3 - 004e-3]
+  # engagePosition =  [-(500e-3 - 059e-3), 200e-3 + 049e-3, 24e-3]  # edge test
+  engagePosition =  [-(500e-3 - 058e-3), 200e-3 + 049e-3, 24e-3]
+  args.domeRadius = 9999
+  args.edge = 1
 
-  # controller_str = "NON"
-  # controller_str = "W1"
-  controller_str = "W2"
-  # controller_str = "W5"
-  # controller_str = "FTR"
-  # controller_str = "PRLalt"
-  # controller_str = "FTRPL"
+  engagePosition[0] -= 040e-3
+  engagePosition[1] -= 040e-3
+  args.domeRadius = 9999
+  args.edge = 0
+
+
+
+  # args.edge = 0
+  # engagePosition =  [-570e-3 - 000e-3, 190e-3, 35e-3 - 010e-3]
+
+  # engagePosition[1] += 040e-3
+  # args.domeRadius = 20
+  # args.edge = 0
+
+  disengagePosition = engagePosition
+  disengagePosition[2] += 2e-3
+  # disengagePosition[2] += 10e-3
 
   # F_normalThres = [1.5, 2.0]
   F_normalThres = 1.5 #1
+  F_lim = 1.5
   Fz_tolerance = 0.1
-  args.domeRadius = 9999
+
+  
   #================================================================================================
   
   # CONSTANTS
@@ -131,9 +144,10 @@ def main(args):
 
   # set tcp offset and calibration between tf and rtde
   rospy.sleep(0.5)
-  rtde_help.setTCPoffset([0, 0, 0.146, 0, 0, 0])
+  # rtde_help.setTCPoffset([0, 0, 0.146, 0, 0, 0])
+  rtde_help.setTCPoffset([0, 0, 0.156, 0, 0, 0])
   rospy.sleep(0.2)
-  rtde_help.setCalibrationMatrix()
+  # rtde_help.setCalibrationMatrix()
   rospy.sleep(0.2)
 
   # Set the PWM Publisher, pwm0
@@ -149,6 +163,7 @@ def main(args):
   file_help.clearTmpFolder()        # clear the temporary folder
 
   setOrientation = tf.transformations.quaternion_from_euler(pi,0,-pi/2 -pi,'sxyz') #static (s) rotating (r)
+  engagePose = rtde_help.getPoseObj(engagePosition, setOrientation)
   disEngagePose = rtde_help.getPoseObj(disengagePosition, setOrientation)
   rospy.sleep(3)
   rtde_help.goToPose(disEngagePose)
@@ -168,12 +183,14 @@ def main(args):
   
 
   try:
-
+    print(rtde_help.getCurrentPose())
+    input("press enter to go to engage pose")
     # go to disengage pose, save pose
     targetPWM_Pub.publish(DUTYCYCLE_0)
-    rospy.sleep(0.1)
-    rtde_help.goToPose(disEngagePose)
-    input("press enter")
+    # rospy.sleep(0.8)
+    # rtde_help.goToPose(engagePose)
+    # print(rtde_help.getCurrentPose())
+    
 
     # start sampling pressure
     P_help.startSampling()
@@ -196,7 +213,7 @@ def main(args):
 
     # initialize variables for fz control to find tipContactPose
     print("move along normal")
-    targetPose = rtde_help.getCurrentPose()
+    # targetPose = rtde_help.getCurrentPose()
     rospy.sleep(.5)
     farFlag = True
     inRangeCounter = 0
@@ -205,36 +222,36 @@ def main(args):
     # test data logger here
     dataLoggerEnable(True)
 
-    while inRangeCounter < 100:
-      if F_normal > -(F_normalThres-Fz_tolerance):
-          # print("should be pushing towards surface in cup z-dir")
-          T_normalMove = adpt_help.get_Tmat_TranlateInZ(direction = 1)
-      elif F_normal < -(F_normalThres+Fz_tolerance):
-          # print("should be pulling away from surface in cup z-dir")
-          T_normalMove = adpt_help.get_Tmat_TranlateInZ(direction=-1)
-      else:
-          T_normalMove = np.eye(4)
-      T_move = T_normalMove
+    # while inRangeCounter < 100:
+    #   if F_normal > -(F_normalThres-Fz_tolerance):
+    #       # print("should be pushing towards surface in cup z-dir")
+    #       T_normalMove = adpt_help.get_Tmat_TranlateInZ(direction = 1)
+    #   elif F_normal < -(F_normalThres+Fz_tolerance):
+    #       # print("should be pulling away from surface in cup z-dir")
+    #       T_normalMove = adpt_help.get_Tmat_TranlateInZ(direction=-1)
+    #   else:
+    #       T_normalMove = np.eye(4)
+    #   T_move = T_normalMove
 
-      targetPose = rtde_help.getCurrentPose()
-      currPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPose)
-      rtde_help.goToPoseAdaptive(currPose)
-      # rtde_help.goToPose(currPose)
+    #   targetPose = rtde_help.getCurrentPose()
+    #   currPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPose)
+    #   rtde_help.goToPoseAdaptive(currPose)
+    #   # rtde_help.goToPose(currPose)
 
-      # Stop criteria
-      F_normal = FT_help.averageFz_noOffset
-      dF = F_normal - (-F_normalThres)
-      # print("P_curr: ", P_curr)
-      print("dF: ", dF)
-      if np.abs(dF) < Fz_tolerance:
-        inRangeCounter+= 1
-      else:
-        inRangeCounter = 0
-      print(inRangeCounter)
-      # rospy.sleep(0.05)
+    #   # Stop criteria
+    #   F_normal = FT_help.averageFz_noOffset
+    #   dF = F_normal - (-F_normalThres)
+    #   # print("P_curr: ", P_curr)
+    #   print("dF: ", dF)
+    #   if np.abs(dF) < Fz_tolerance:
+    #     inRangeCounter+= 1
+    #   else:
+    #     inRangeCounter = 0
+    #   print(inRangeCounter)
+    #   # rospy.sleep(0.05)
     
-    rtde_help.stopAtCurrPoseAdaptive()
-    rospy.sleep(0.5)
+    # rtde_help.stopAtCurrPoseAdaptive()
+    # rospy.sleep(0.5)
     
     # END TEST OF DATA LOGGER HERE
     dataLoggerEnable(False)
@@ -243,13 +260,16 @@ def main(args):
 
     # initialize the point to sweep theta about
     tipContactPose = rtde_help.getCurrentPose()
-    tipContactPose.pose.position.z -= 3e-3
+    tipContactPose.pose.position.z -= 2e-3
+    rtde_help.goToPose(tipContactPose)
 
     phi = 0
     phiMax = np.pi * 2
     phiList = np.linspace(0,phiMax,36*2+1)
-    phiList = np.array(range(0, 361, 5)) /180*np.pi
-    # phiList = np.array([0, pi/6])
+    phiList = np.array(range(0, 361, 5)) / 180*np.pi
+    phiList = np.array([0, pi/6])
+    phiList = np.array([0])
+    phiList = np.array(range(40, 46, 5)) / 180*np.pi
 
     # steps = 50
     # steps = 30
@@ -261,7 +281,7 @@ def main(args):
 
     # go to starting theta pose
     thetaIdx = 0
-    theta = 20 * pi/180
+    theta = 5 * pi/180
     omega_hat1 = hat(np.array([1, 0, 0]))
     Rw1 = scipy.linalg.expm(theta * omega_hat1)
 
@@ -271,8 +291,9 @@ def main(args):
 
     Rw = np.dot(Rw1, Rw2)
 
-    # L = 20e-3
-    L = 8e-3
+    # L = 3e-3
+    # L = 8e-3
+    L = 12e-3
     # L = 0
     cx = L*np.sin(theta)
     # cx = 0
@@ -305,9 +326,12 @@ def main(args):
         
 
         # CONDITIONS
-        phi = phiList[thetaIdx]
+        # phi = phiList[thetaIdx]
+        phi = 0
         # phi = 45
-        theta = 20 * pi/180
+        # theta = 45 * pi/180
+        print("theta: ", theta/pi*180)
+        theta = phiList[thetaIdx]
         omega_hat1 = hat(np.array([1, 0, 0]))
         Rw1 = scipy.linalg.expm(theta * omega_hat1)
 
@@ -321,14 +345,14 @@ def main(args):
         cz = -L*np.cos(theta)
 
         # FIRST GO TO A HORIZONTAL POSITION
-        T_from_tipContact = create_transform_matrix(Rw2, [0.0, cx, cz - 010e-3])
+        T_from_tipContact = create_transform_matrix(Rw2, [0.0, cx, cz])
         targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_from_tipContact, tipContactPose)
         rtde_help.goToPose(targetPose)
 
         rospy.sleep(.1)
         targetPWM_Pub.publish(DUTYCYCLE_100)
-        rospy.sleep(1.5)
-        targetPWM_Pub.publish(DUTYCYCLE_30)
+        # rospy.sleep(1.5)
+        # targetPWM_Pub.publish(DUTYCYCLE_30)
 
         T_from_tipContact = create_transform_matrix(Rw, [0.0, cx, cz])
         targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_from_tipContact, tipContactPose)
@@ -359,6 +383,8 @@ def main(args):
       else:
         inRangeCounter = 0
       print("fz counter:", inRangeCounter)
+
+      F_normalThres = F_lim
       
       if F_normal > -(F_normalThres-Fz_tolerance):
           # print("should be pushing towards surface in cup z-dir")
@@ -379,7 +405,8 @@ def main(args):
 
       # if True:
       # if closeEnough and np.abs(dF)<Fz_tolerance:
-      if closeEnough and inRangeCounter > 100:
+      # if closeEnough and inRangeCounter > 100:
+      if inRangeCounter > 100:  
       # if np.abs(dF)<Fz_tolerance:
 
         rtde_help.stopAtCurrPoseAdaptive()
@@ -396,9 +423,9 @@ def main(args):
         rospy.sleep(0.2)  
 
         args.Fz_set = F_normalThres
-        args.theta = int(round(theta *180/pi))
+        args.gamma = int(round(theta *180/pi))
         args.phi = int(round(phi *180/pi))
-        file_help.saveDataParams(args, appendTxt='seb_rotational_'+'domeRadius_' + str(args.domeRadius) + 'mm_gamma_' + str(args.theta) + '_phi_' + str(args.phi))
+        file_help.saveDataParams(args, appendTxt='seb_rotational_'+'domeRadius_' + str(args.domeRadius) + 'mm_gamma_' + str(args.gamma) + '_phi_' + str(args.phi) + '_edge_' + str(args.edge))
         file_help.clearTmpFolder()
         P_help.stopSampling()
         rospy.sleep(0.1)
@@ -425,22 +452,22 @@ def main(args):
 
     setOrientation = tf.transformations.quaternion_from_euler(pi,0,-pi/2 -pi,'sxyz') #static (s) rotating (r)
     disEngagePose = rtde_help.getPoseObj(disengagePosition, setOrientation)
-    rospy.sleep(3)
+    rospy.sleep(1)
     rtde_help.goToPose(disEngagePose)
 
-    for i in range(2):
-      tipContactPose = rtde_help.getCurrentPose()
-      phi = pi/4 * 2.1
-      omega_hat = hat(np.array([0, 0, -1]))
-      Rw = scipy.linalg.expm(phi * omega_hat)
-      T_from_tipContact = create_transform_matrix(Rw, [0.0, 0, 0])
-      targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_from_tipContact, tipContactPose)
-      rtde_help.goToPose(targetPose)
-      rospy.sleep(1)
+    # for i in range(2):
+    #   tipContactPose = rtde_help.getCurrentPose()
+    #   phi = pi/4 * 2.1
+    #   omega_hat = hat(np.array([0, 0, -1]))
+    #   Rw = scipy.linalg.expm(phi * omega_hat)
+    #   T_from_tipContact = create_transform_matrix(Rw, [0.0, 0, 0])
+    #   targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_from_tipContact, tipContactPose)
+    #   rtde_help.goToPose(targetPose)
+    #   rospy.sleep(1)
 
     rtde_help.goToPose(disEngagePose)
 
-    rospy.sleep(3)
+    rospy.sleep(1)
     
 
     # save args

@@ -79,7 +79,11 @@ def main(args):
   #========================== User Input================================================
   # engagePosition =  [-586e-3, 198e-3, 35e-3 - 004e-3]
   # engagePosition =  [-584e-3 - 001e-3, 200e-3, 35e-3 - 004e-3]
-  engagePosition =  [-597e-3 - 8e-3, 81e-3 + 15e-3, 30e-3]
+  engagePosition =  [-595e-3 - 005e-3, 93e-3 + 00e-3, 20e-3]  # edge test
+  args.edge = 1
+  # engagePosition =  [-595e-3 - 025e-3, 96e-3 + 00e-3, 20e-3]  # flat test
+  # args.edge = 0
+  # engagePosition =  [-570e-3 - 000e-3, 190e-3, 35e-3 - 010e-3]
   disengagePosition = engagePosition
   disengagePosition[2] += 10e-3
   # disengagePosition[2] += 100e-3
@@ -94,7 +98,7 @@ def main(args):
 
   # F_normalThres = [1.5, 2.0]
   F_normalThres = 1.5 #1
-  F_lim = 20
+  F_lim = 1.5
   Fz_tolerance = 0.1
   args.domeRadius = 9999
   #================================================================================================
@@ -275,8 +279,8 @@ def main(args):
 
     Rw = np.dot(Rw1, Rw2)
 
-    # L = 20e-3
-    L = 12e-3
+    L = 20e-3
+    # L = 12e-3
     # L = 0
     cx = L*np.sin(theta)
     # cx = 0
@@ -406,7 +410,7 @@ def main(args):
         args.Fz_set = F_normalThres
         args.gamma = int(round(theta *180/pi))
         args.phi = int(round(phi *180/pi))
-        file_help.saveDataParams(args, appendTxt='seb_rotational_'+'domeRadius_' + str(args.domeRadius) + 'mm_gamma_' + str(args.gamma) + '_phi_' + str(args.phi))
+        file_help.saveDataParams(args, appendTxt='seb_rotational_'+'domeRadius_' + str(args.domeRadius) + 'mm_gamma_' + str(args.gamma) + '_phi_' + str(args.phi) + '_edge_' + str(args.edge))
         file_help.clearTmpFolder()
         P_help.stopSampling()
         rospy.sleep(0.1)

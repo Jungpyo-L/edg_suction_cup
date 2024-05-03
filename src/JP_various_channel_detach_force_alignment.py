@@ -42,16 +42,13 @@ from scipy import signal
 
 from math import pi, cos, sin, floor
 
+
 from helperFunction.SuctionP_callback_helper import P_CallbackHelp
 from helperFunction.FT_callback_helper import FT_CallbackHelp
 from helperFunction.fileSaveHelper import fileSaveHelp
 from helperFunction.rtde_helper import rtdeHelp
 from helperFunction.adaptiveMotion import adaptMotionHelp
 
-def calculate_distance(current_position, target_position):
-    return ((current_position[0] - target_position[0])**2 +
-            (current_position[1] - target_position[1])**2 +
-            (current_position[2] - target_position[2])**2) ** 0.5
 
 def main(args):
 
@@ -64,7 +61,7 @@ def main(args):
   SYNC_START = 1
   SYNC_STOP = 2
 
-  F_normalThres = [0.5]
+  F_normalThres = [args.normalForce, args.normalForce+0.5]
   args.normalForce_thres = F_normalThres
 
   FT_SimulatorOn = False
@@ -87,7 +84,7 @@ def main(args):
   rospy.sleep(0.5)
   rtde_help.setTCPoffset([0, 0, 0.150, 0, 0, 0])
   rospy.sleep(0.2)
-  # rtde_help.setCalibrationMatrix()                   # calibration matrix, causing error
+  # rtde_help.setCalibrationMatrix()
   # rospy.sleep(0.2)
 
   if FT_SimulatorOn:
@@ -114,19 +111,14 @@ def main(args):
   datadir = file_help.ResultSavingDirectory
   
   # pose initialization
-  disengagePosition_init =  [-0.605, .21, 0.045] # unit is in m
-  if args.ch == 6:
-    disengagePosition_init =  [-0.605, .21, 0.045 + 0.02] # unit is in m
+  xoffset = args.xoffset
+  disengagePosition_init =  [-0.625, .280, 0.0175] # unit is in m
+  # if args.ch == 6:
+  #   disengagePosition_init[2] += 0.02
   setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
   disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
-  targetPWM_Pub.publish(DUTYCYCLE_0)
-  currentPose = rtde_help.getCurrentTCPPose()
 
-  current = [currentPose.pose.position.x, currentPose.pose.position.y, currentPose.pose.position.z]
-  target = [disEngagePose.pose.position.x,  disEngagePose.pose.position.y,  disEngagePose.pose.position.z]
 
-  distance=0
-  distance = calculate_distance(current, target)
   # try block so that we can have a keyboard exception
   try:
     # Go to disengage Pose
@@ -134,59 +126,45 @@ def main(args):
     rtde_help.goToPose(disEngagePose)
     rospy.sleep(0.1)
 
-    if not distance <0.00001: 
-      current_pose = rtde_help.getCurrentTCPPose() #attempt to get updated pose as the UR10 is moving
-      current1 = [current_pose.pose.position.x, current_pose.pose.position.y, current_pose.pose.position.z]
-      target1 = [disEngagePose.pose.position.x,  disEngagePose.pose.position.y,  disEngagePose.pose.position.z]
-      print("Current pose is: ", current1)
-      print("calculated distance: ", calculate_distance(current1, target1)) 
+    P_help.startSampling()      
+    rospy.sleep(0.5)
+    FT_help.setNowAsBias()
+    P_help.setNowAsOffset()
+    Fz_offset = FT_help.averageFz
 
-    # change tile angle
-    for tilt in range(0, 21, 5):
-      args.tilt = tilt
-      print("tilt: ", tilt)
-      setOrientation = tf.transformations.quaternion_from_euler(pi+args.tilt*pi/180,0,pi/2,'sxyz') #static (s) rotating (r)
-      disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
-      ################3 GO to POse
-      rtde_help.goToPose(disEngagePose)
-      rospy.sleep(0.3)
-      P_help.startSampling()      
-      rospy.sleep(0.5)
-      FT_help.setNowAsBias()
-      P_help.setNowAsOffset()
-      Fz_offset = FT_help.averageFz
+
+    input("Press <Enter> to go normal to get engage point")
+    dataLoggerEnable(True)
+    rospy.sleep(0.3) # default is 0.5
+
+    if args.zHeight == True:
+      if args.ch == 6:
+        engage_z = disengagePosition_init[2] - 4e-3
+      else:
+        engage_z = disengagePosition_init[2] - 4e-3
+    else:
+      initEndEffPoseStamped = rtde_help.getCurrentPose()
+
+      print("move along normal")
+      targetPose = rtde_help.getCurrentPose()
+
+      # flags and variables
       
-      for normal_thresh in F_normalThres:
-        args.normalForce = normal_thresh
-
-        print("Start to go normal to get engage point")
-        print("normal_thresh: ", normal_thresh)
-        dataLoggerEnable(True)
-        rospy.sleep(0.3) # default is 0.5
-
-        print("move along normal")
-        # targetPose = rtde_help.getCurrentPose()
-        targetPose = rtde_help.rtde_r.getActualTCPPose()
-
-        # flags and variables
-        farFlag = True
-        args.SuctionFlag = False
-        
-        # slow approach until it reach suction engage
-        F_normal = FT_help.averageFz_noOffset
-        # targetPoseEngaged = rtde_help.getCurrentPose()
-        targetPoseEngaged = rtde_help.rtde_r.getActualTCPPose()
-        # targetPWM_Pub.publish(DUTYCYCLE_0)
-        syncPub.publish(SYNC_START)
-        while farFlag:
-          if F_normal > -args.normalForce:
+      farFlag = True
+      
+      # slow approach until it reach target height
+      F_normal = FT_help.averageFz_noOffset
+      targetPoseEngaged = rtde_help.getCurrentPose()
+      # targetPWM_Pub.publish(DUTYCYCLE_0)
+      syncPub.publish(SYNC_START)
+      while farFlag:
+          if targetPoseEngaged.pose.position.z > disengagePosition_init[2] - 0.008:
             T_move = adpt_help.get_Tmat_TranlateInZ(direction = 1)
             targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPose)
-            #########33 Goto pose adaptive #######
-            # targetPose= rtde_help.rtde_r.getActualTCPPose()
             rtde_help.goToPoseAdaptive(targetPose, time = 0.1)
-            F_normal = FT_help.averageFz_noOffset
-            args.normalForceActual = F_normal
+
+            # new z height
+            targetPoseEngaged = rtde_help.getCurrentPose()
             rospy.sleep(0.1)
 
           else:
@@ -197,53 +175,80 @@ def main(args):
             rospy.sleep(0.1)
             syncPub.publish(SYNC_STOP)
             rospy.sleep(0.2)
-            args.SuctionFlag = True
+          
+    targetPoseEngaged = rtde_help.getCurrentPose()
+    T_N_Engaged = adpt_help.get_Tmat_from_Pose(targetPoseEngaged)
+    engage_z = targetPoseEngaged.pose.position.z
+    rtde_help.goToPose(disEngagePose)
+    rospy.sleep(0.1)
 
-        # check if suction engage is successful
-        targetPWM_Pub.publish(DUTYCYCLE_100)
-        rospy.sleep(1)
-        P_init = P_help.four_pressure
-        args.pressure_avg = P_init
+    targetPWM_Pub.publish(DUTYCYCLE_100)
+    syncPub.publish(SYNC_START)
+
+    # start to tilt
+    # for yaw in range(0, 360//args.ch, 360//args.ch//3):
+    for yaw in range(0, 30, 30):
+      # if yaw == 0:
+      #   continue
+      args.yaw = yaw
+      # args.yaw = 90
+      # change tile angle
+      for tilt in range(0, 51, 10):
+        args.tilt = tilt
+        print("tilt: ", tilt)
+        setOrientation = tf.transformations.quaternion_from_euler(pi+args.tilt*pi/180,0,pi/2,'sxyz') #static (s) rotating (r)
+        if args.yaw != 0:
+          setOrientation = tf.transformations.quaternion_from_euler(-pi/2 - pi/180 * args.yaw, pi, args.tilt*pi/180,'szxy') #static (s) rotating (r)
+
+        disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
+        rtde_help.goToPose(disEngagePose)
+        rospy.sleep(0.3)
+        dataLoggerEnable(True)
+        rospy.sleep(0.3) 
+
+        # check pressure
+        args.SuctionFlag = True
         P_vac = P_help.P_vac
+        syncPub.publish(SYNC_START)
 
-        # check if suction engage is successful
-        if all(np.array(P_init)[0:args.ch]<P_vac):
-          print("Suction Engage Succeed!!")
-          args.SuctionFlag = True
-          syncPub.publish(SYNC_STOP)
-        else:
-          args.SuctionFlag = False
+        while args.SuctionFlag:
+          T_move = adpt_help.get_Tmat_TranlateInZ(direction = -1)
+          targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPose)
+          rtde_help.goToPoseAdaptive(targetPose, time = 0.1)
+          F_normal = FT_help.averageFz_noOffset
+          args.normalForceDetach = F_normal
+          rospy.sleep(0.1)
+          P_check = P_help.four_pressure
+
+          if all(np.array(P_check)[0:args.ch]>P_vac):
+            print("Suction detach Succeed!!")
+            args.SuctionFlag = False
+            syncPub.publish(SYNC_STOP)
+          else:
+            args.SuctionFlag = True
 
         rospy.sleep(0.1)
         targetPWM_Pub.publish(DUTYCYCLE_0)
         rospy.sleep(0.1)
               
-        syncPub.publish(SYNC_STOP)
-        print("Go to disengage point")
         rtde_help.goToPose(disEngagePose)
         rospy.sleep(0.5)
 
         # stop data logging
-        rospy.sleep(0.2)
         dataLoggerEnable(False)
         rospy.sleep(0.2)
-        targetPWM_Pub.publish(DUTYCYCLE_0)
-
 
         # save data and clear the temporary folder
-        # file_help.saveDataParams(args, appendTxt='jp_various_suction_cup_tilt_normal_'+'ch_' + str(args.ch)+'_tilt_' + str(args.tilt)+'_normal_' + str(args.normalForce)+'_formlab_' + str(args.formlab))
+        file_help.saveDataParams(args, appendTxt='jp_various_suction_cup_normal_detach_'+'ch_' + str(args.ch)+'_tilt_' + str(args.tilt)+'_material_' + str(args.material)+'_yaw_' + str(args.yaw))
         file_help.clearTmpFolder()
 
-        if args.SuctionFlag:
-          break
 
-
-      # print("Go to disengage point")
-      # setOrientation = tf.transformations.quaternion_from_euler(pi,args.tilt*pi/180,pi/2,'sxyz') #static (s) rotating (r)
-      # disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
-      # rtde_help.goToPose(disEngagePose)
-      # # cartesian_help.goToPose(disEngagePose,wait=True)
-      # rospy.sleep(0.3)
+    print("Go to disengage point")
+    setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
+    disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
+    rtde_help.goToPose(disEngagePose)
+    # cartesian_help.goToPose(disEngagePose,wait=True)
+    rospy.sleep(0.3)
 
 
 
@@ -254,7 +259,7 @@ def main(args):
     
 
     # P_help.stopSampling()
-    print("initial distance: ", distance)
+
 
     print("============ Python UR_Interface demo complete!")
   
@@ -274,11 +279,11 @@ if __name__ == '__main__':
   parser.add_argument('--angle', type=int, help='angles of exploration', default= 360)
   parser.add_argument('--startAngle', type=int, help='angles of exploration', default= 0)
   parser.add_argument('--primitives', type=str, help='types of primitives (edge, corner, etc.)', default= "edge")
-  parser.add_argument('--normalForce', type=float, help='normal force', default= 5)
+  parser.add_argument('--normalForce', type=float, help='normal force', default= 1.5)
   parser.add_argument('--zHeight', type=bool, help='use presset height mode? (rather than normal force)', default= False)
   parser.add_argument('--ch', type=int, help='number of channel', default= 4)
-  parser.add_argument('--formlab', type=int, help='formlab', default= 1)
-  parser.add_argument('--tilt', type=int, help='tilted angle of the suction cup', default= 0)
+  parser.add_argument('--material', type=int, help='0: Mold max 40, 1: Elastic 50A (formlab), 2: Agilus 30 (Objet)', default= 0)
+
 
 
   args = parser.parse_args()    

@@ -149,17 +149,35 @@ class rtdeHelp(object):
         self.goToPose(self.getPoseObj(goalPosition, setOrientation))
 
     # def goToPose(self, goalPose, speed = 2.5, acc = 1.7, asynchronous=False):
-    # def goToPose(self, goalPose, speed = 0.1, acc = 0.1, asynchronous=False):     # original? need for edge following
+    def goToPose(self, goalPose, speed = 0.1, acc = 0.1, asynchronous=False):     # original? need for edge following
     # def goToPose(self, goalPose, speed = 0.01, acc = 0.1, asynchronous=False):    # try this!
     # def goToPose(self, goalPose, speed = 0.3, acc = 0.2, asynchronous=False):    
     # def goToPose(self, goalPose, speed = 0.3, acc = 1.7, asynchronous=False):        # seb experimenting
-    def goToPose(self, goalPose, speed = 0.35, acc = 0.2, asynchronous=False):          # Alahe
+    # def goToPose(self, goalPose, speed = 0.35, acc = 0.2, asynchronous=False):          # Alahe
         pose = self.getTransformedPose(goalPose)
         targetPose = self.getTCPPose(pose)
         print(targetPose)
         # speed = self.speed
         # acc = self.acc
         self.rtde_c.moveL(targetPose, speed, acc, asynchronous)
+
+    # def goToPoseAdaptive(self, goalPose, speed = 0.0, acc = 0.0,  time = 0.05, lookahead_time = 0.2, gain = 100.0): # normal force measurement
+    # # def goToPoseAdaptive(self, goalPose, speed = 0.02, acc = 0.02,  time = 0.05, lookahead_time = 0.05, gain = 200.0):
+    # # def goToPoseAdaptive(self, goalPose, speed = 0.0, acc = 0.0,  time = 0.05, lookahead_time = 0.2, gain = 200.0):
+    #     # lookahead_time range [0.03 0.2]
+    #     # grain range [100 2000]
+    #     t_start = self.rtde_c.initPeriod()
+    #     pose = self.getTransformedPose(goalPose)
+    #     targetPose = self.getTCPPose(pose)
+    #     currentPose = self.getTCPPose(self.getCurrentTCPPose())
+    #     # print("targetPose-currentPose", np.array(targetPose)-np.array(currentPose))
+    #     pose_diff_norm = np.linalg.norm(np.array(targetPose[0:3])-np.array(currentPose[0:3]))
+    #     # if pose_diff_norm  > 0.001:
+    #     #     print("norm of pose difference: ", pose_diff_norm)
+
+    #     self.rtde_c.servoL(targetPose, speed, acc, time, lookahead_time, gain)
+    #     # rospy.sleep(0.01)
+    #     self.rtde_c.waitPeriod(t_start)
     
     # def getTCPForce(self):
     #     wrench = self.rtde_c.getActualTCPForce()
@@ -311,6 +329,12 @@ class rtdeHelp(object):
     def getCurrentTCPPose(self):
         TCPPose = self.rtde_r.getActualTCPPose()
         Position = [TCPPose[0], TCPPose[1], TCPPose[2]]
+        r = R.from_rotvec(np.array([TCPPose[3], TCPPose[4], TCPPose[5]]))
+        return self.getPoseObj(Position, r.as_quat())
+    
+    def getCurrentTCPPose1(self):
+        TCPPose = self.rtde_r.getActualTCPPose()
+        Position = [-TCPPose[0], -TCPPose[1], TCPPose[2]]
         r = R.from_rotvec(np.array([TCPPose[3], TCPPose[4], TCPPose[5]]))
         return self.getPoseObj(Position, r.as_quat())
 

@@ -91,8 +91,8 @@ def main(args):
   else:
     rtde_help.setTCPoffset([0, 0, 0.150, 0, 0, 0])
   rospy.sleep(0.2)
-  rtde_help.setCalibrationMatrix()
-  rospy.sleep(0.2)
+  # rtde_help.setCalibrationMatrix()
+  # rospy.sleep(0.2)
 
   
 
@@ -123,7 +123,7 @@ def main(args):
   xoffset = args.xoffset
   # disengagePosition_init =  [-0.711, .107, 0.020] # seb
 
-  disengagePosition_init =  [-0.621, .280, 0.0165] # unit is in m
+  disengagePosition_init =  [-0.633, .280, 0.0165] # unit is in m
   if args.ch == 6:
     disengagePosition_init[2] += 0.02
   elif args.newCup == True:
@@ -272,7 +272,8 @@ def main(args):
           P_init[3] = P_init[2] # for the case of channel 3 suction cup
         # P_init[1] = P_init[0] # for the case of channel 2 suction cup
         # P_init[3] = P_init[2] # for the case of channel 2 suction cup
-        if all(np.array(P_init)<P_vac) and i == 0 and j != 7:
+        # if all(np.array(P_init)<P_vac) and i == 0 and j != 7:
+        if all(np.array(P_init)<P_vac) and i == 0:
           print("Suction Engage Succeed from initial touch")
           SuctionFlag = True
         else:
@@ -293,7 +294,8 @@ def main(args):
         rospy.sleep(0.1)    
 
         # save data and clear the temporary folder
-        file_help.saveDataParams(args, appendTxt='jp_lateral_'+'corner_' + str(args.corner)+'_xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta)+'_material_' + str(args.material))
+        # file_help.saveDataParams(args, appendTxt='jp_lateral_'+'corner_' + str(args.corner)+'_xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta)+'_material_' + str(args.material))
+        file_help.saveDataParams(args, appendTxt='jp_lateral_'+'shorten_mouse'+'_xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta)+'_material_' + str(args.material))
         # file_help.saveDataParams(args, appendTxt='sdl_lateral_' +'xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta))
         file_help.clearTmpFolder()
         P_help.stopSampling()

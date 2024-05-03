@@ -5,7 +5,7 @@ import datetime
 import numpy as np
 import re
 from geometry_msgs.msg import PoseStamped
-from .utils import rotation_from_quaternion, create_transform_matrix, quaternion_from_matrix, normalize, hat
+from .utils import rotation_from_quaternion, create_transform_matrix, quaternion_from_matrix, normalize, hat, quaternionFromMatrix, rotationFromQuaternion
 from scipy.spatial.transform import Rotation as Rot
 import scipy
 
@@ -28,32 +28,49 @@ class adaptMotionHelp(object):
         self.BM_y = 0
 
 
-    def get_ObjectPoseStamped_from_T(self,T):
+    def get_ObjectPoseStamped_from_T(self,T): #transformation
         thisPose = PoseStamped()
         thisPose.header.frame_id = "base_link"
         R = T[0:3,0:3]
         quat = quaternion_from_matrix(R)
+        # quat = quaternionFromMatrix(R)
         position = T[0:3,3]
         [thisPose.pose.position.x, thisPose.pose.position.y, thisPose.pose.position.z] = position
         [thisPose.pose.orientation.x, thisPose.pose.orientation.y, thisPose.pose.orientation.z,thisPose.pose.orientation.w] = quat
-
         return thisPose
 
 
-    def get_Tmat_from_Pose(self,PoseStamped):
+    # def get_ObjectPoseStamped_from_T(self,T): #transformation
+    #     thisPose = PoseStamped()
+    #     thisPose.header.frame_id = "base_link"
+    #     # R = T[0:3,0:3]
+    #     quat =T[:4]  #RTDE
+    #     # quat = quaternion_from_matrix(R)   #original
+    #     position = T[:3,3]
+    #     # quat = quaternionFromMatrix(R)
+    #     # position = T[0:3,3]
+    #     [thisPose.pose.position.x, thisPose.pose.position.y, thisPose.pose.position.z] = position
+    #     [thisPose.pose.orientation.x, thisPose.pose.orientation.y, thisPose.pose.orientation.z,thisPose.pose.orientation.w] = quat
+
+    #     return thisPose
+
+    def get_Tmat_from_Pose(self,PoseStamped):   #transformation
         quat = [PoseStamped.pose.orientation.x, PoseStamped.pose.orientation.y, PoseStamped.pose.orientation.z, PoseStamped.pose.orientation.w]        
         translate = [PoseStamped.pose.position.x, PoseStamped.pose.position.y, PoseStamped.pose.position.z]
         return self.get_Tmat_from_PositionQuat(translate, quat)
+        # return translate + quat
     
-    def get_Tmat_from_PositionQuat(self, Position, Quat):
-        rotationMat = rotation_from_quaternion(Quat)
+    def get_Tmat_from_PositionQuat(self, Position, Quat):  #transformation
+        rotationMat = rotation_from_quaternion(Quat)  #orginal
+        # rotationMat = rotationFromQuaternion(Quat) 
         T = create_transform_matrix(rotationMat, Position)
         return T
 
 
-    def get_PoseStamped_from_T_initPose(self, T, initPoseStamped):
-        T_now = self.get_Tmat_from_Pose(initPoseStamped)
-        targetPose = self.get_ObjectPoseStamped_from_T(np.matmul(T_now, T))
+    def get_PoseStamped_from_T_initPose(self, T, initPoseStamped):  #transformation
+        T_now = self.get_Tmat_from_Pose(initPoseStamped)  #original
+        targetPose = self.get_ObjectPoseStamped_from_T(np.matmul(T_now, T))  #original
+        # targetPose = self.get_ObjectPoseStamped_from_T(T)
         return targetPose
     
     def get_Tmat_TranlateInBodyF(self, translate = [0., 0., 0.]):

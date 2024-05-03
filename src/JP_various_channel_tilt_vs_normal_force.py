@@ -131,7 +131,8 @@ def main(args):
 
     
     # change yaw angle
-    for yaw in range(0, 360//args.ch, 360//args.ch//3):
+    # for yaw in range(0, 360//args.ch, 360//args.ch//3):
+    for yaw in range(0, 90, 30):
       # if yaw == 0:
       #   continue
       args.yaw = yaw
