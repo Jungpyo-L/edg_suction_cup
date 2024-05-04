@@ -77,26 +77,24 @@ from helperFunction.gqcnn_policy_class import GraspProcessor
 
 def main(args):
   #========================== User Input================================================
-  # engagePosition =  [-586e-3, 198e-3, 35e-3 - 004e-3]
-  # engagePosition =  [-584e-3 - 001e-3, 200e-3, 35e-3 - 004e-3]
-  # engagePosition =  [-(500e-3 - 059e-3), 200e-3 + 049e-3, 24e-3]  # edge test
+
+
+  # flat-edge-tilt
   engagePosition =  [-(500e-3 - 058e-3), 200e-3 + 049e-3, 24e-3]
   args.domeRadius = 9999
   args.edge = 1
 
-  engagePosition[0] -= 040e-3
-  engagePosition[1] -= 040e-3
-  args.domeRadius = 9999
+  # flat-tilt
+  # engagePosition[0] -= 040e-3
+  # engagePosition[1] -= 040e-3
+  # args.domeRadius = 9999
+  # args.edge = 0
+
+  # dome-tilt
+  engagePosition[1] += 040e-3
+  args.domeRadius = 20
   args.edge = 0
-
-
-
-  # args.edge = 0
-  # engagePosition =  [-570e-3 - 000e-3, 190e-3, 35e-3 - 010e-3]
-
-  # engagePosition[1] += 040e-3
-  # args.domeRadius = 20
-  # args.edge = 0
+  
 
   disengagePosition = engagePosition
   disengagePosition[2] += 2e-3

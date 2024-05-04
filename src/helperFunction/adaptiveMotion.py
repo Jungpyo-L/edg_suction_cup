@@ -5,11 +5,7 @@ import datetime
 import numpy as np
 import re
 from geometry_msgs.msg import PoseStamped
-<<<<<<< HEAD
-from .utils import rotation_from_quaternion, create_transform_matrix, quaternion_from_matrix, normalize, hat, quaternionFromMatrix, rotationFromQuaternion
-=======
 from .utils import rotation_from_quaternion, create_transform_matrix, rotationFromQuaternion, normalize, hat, quaternionFromMatrix, quaternion_from_matrix
->>>>>>> 9a1b2a66f65c075b7e9d7ed8ec0b5eda861a43f8
 from scipy.spatial.transform import Rotation as Rot
 import scipy
 
@@ -33,14 +29,6 @@ class adaptMotionHelp(object):
         self.BM_y = 0
 
 
-<<<<<<< HEAD
-    def get_ObjectPoseStamped_from_T(self,T): #transformation
-        thisPose = PoseStamped()
-        thisPose.header.frame_id = "base_link"
-        R = T[0:3,0:3]
-        quat = quaternion_from_matrix(R)
-        # quat = quaternionFromMatrix(R)
-=======
     def get_ObjectPoseStamped_from_T(self,T):   #transformation
         thisPose = PoseStamped()
         thisPose.header.frame_id = "base_link"
@@ -48,7 +36,6 @@ class adaptMotionHelp(object):
         quat = quaternion_from_matrix(R)   #original, quat matrix
         # quat = quaternionFromMatrix(R)   #new transformation function in utils.py
         # quat =T[0:3,0:3] #rtde
->>>>>>> 9a1b2a66f65c075b7e9d7ed8ec0b5eda861a43f8
         position = T[0:3,3]
         # position = T[:3]
         [thisPose.pose.position.x, thisPose.pose.position.y, thisPose.pose.position.z] = position
@@ -56,31 +43,6 @@ class adaptMotionHelp(object):
         return thisPose
 
 
-<<<<<<< HEAD
-    # def get_ObjectPoseStamped_from_T(self,T): #transformation
-    #     thisPose = PoseStamped()
-    #     thisPose.header.frame_id = "base_link"
-    #     # R = T[0:3,0:3]
-    #     quat =T[:4]  #RTDE
-    #     # quat = quaternion_from_matrix(R)   #original
-    #     position = T[:3,3]
-    #     # quat = quaternionFromMatrix(R)
-    #     # position = T[0:3,3]
-    #     [thisPose.pose.position.x, thisPose.pose.position.y, thisPose.pose.position.z] = position
-    #     [thisPose.pose.orientation.x, thisPose.pose.orientation.y, thisPose.pose.orientation.z,thisPose.pose.orientation.w] = quat
-
-    #     return thisPose
-
-    def get_Tmat_from_Pose(self,PoseStamped):   #transformation
-        quat = [PoseStamped.pose.orientation.x, PoseStamped.pose.orientation.y, PoseStamped.pose.orientation.z, PoseStamped.pose.orientation.w]        
-        translate = [PoseStamped.pose.position.x, PoseStamped.pose.position.y, PoseStamped.pose.position.z]
-        return self.get_Tmat_from_PositionQuat(translate, quat)
-        # return translate + quat
-    
-    def get_Tmat_from_PositionQuat(self, Position, Quat):  #transformation
-        rotationMat = rotation_from_quaternion(Quat)  #orginal
-        # rotationMat = rotationFromQuaternion(Quat) 
-=======
     def get_Tmat_from_Pose(self,PoseStamped):  #format
         quat = [PoseStamped.pose.orientation.x, PoseStamped.pose.orientation.y, PoseStamped.pose.orientation.z, PoseStamped.pose.orientation.w]        
         translate = [PoseStamped.pose.position.x, PoseStamped.pose.position.y, PoseStamped.pose.position.z]
@@ -90,22 +52,14 @@ class adaptMotionHelp(object):
     def get_Tmat_from_PositionQuat(self, Position, Quat):    #transformation
         rotationMat = rotation_from_quaternion(Quat)   #original
         # rotationMat = rotationFromQuaternion(Quat)   #new transformation function in utils.py
->>>>>>> 9a1b2a66f65c075b7e9d7ed8ec0b5eda861a43f8
         T = create_transform_matrix(rotationMat, Position)
         return T
 
 
-<<<<<<< HEAD
-    def get_PoseStamped_from_T_initPose(self, T, initPoseStamped):  #transformation
-        T_now = self.get_Tmat_from_Pose(initPoseStamped)  #original
-        targetPose = self.get_ObjectPoseStamped_from_T(np.matmul(T_now, T))  #original
-        # targetPose = self.get_ObjectPoseStamped_from_T(T)
-=======
     def get_PoseStamped_from_T_initPose(self, T, initPoseStamped):   #transformation
         T_now = self.get_Tmat_from_Pose(initPoseStamped)    #original
         targetPose = self.get_ObjectPoseStamped_from_T(np.matmul(T_now, T))   #original
         # targetPose = self.get_ObjectPoseStamped_from_T(T)   #rtde
->>>>>>> 9a1b2a66f65c075b7e9d7ed8ec0b5eda861a43f8
         return targetPose
 
 
