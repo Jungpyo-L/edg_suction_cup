@@ -264,8 +264,8 @@ class rtdeHelp(object):
         t_start = self.rtde_c.initPeriod()
         pose = self.getTransformedPose(goalPose)
         targetPose = self.getTCPPose(pose)
-        # currentPose = self.getTCPPose(self.getCurrentTCPPose())
-        currentPose = self.getTCPPose(self.rtde_r.getActualTCPPose())
+        currentPose = self.getTCPPose(self.getCurrentTCPPose())
+        # currentPose = self.getTCPPose(self.rtde_r.getActualTCPPose())
         # print("targetPose-currentPose", np.array(targetPose)-np.array(currentPose))
         pose_diff_norm = np.linalg.norm(np.array(targetPose[0:3])-np.array(currentPose[0:3]))
         # if pose_diff_norm  > 0.001:
