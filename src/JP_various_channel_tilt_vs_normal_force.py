@@ -131,8 +131,8 @@ def main(args):
 
     
     # change yaw angle
-    # for yaw in range(0, 360//args.ch, 360//args.ch//3):
-    for yaw in range(0, 90, 30):
+    for yaw in range(0, 360//args.ch, 360//args.ch//3):
+    # for yaw in range(0, 90, 30):
       # if yaw == 0:
       #   continue
       args.yaw = yaw
@@ -200,7 +200,8 @@ def main(args):
           P_vac = P_help.P_vac
 
           # check if suction engage is successful
-          if all(np.array(P_init)[0:args.ch]<P_vac):
+          # if all(np.array(P_init)[0:args.ch]<P_vac):
+          if P_init[0]<P_vac and P_init[2]<P_vac: # Ch2
             print("Suction Engage Succeed!!")
             args.SuctionFlag = True
             syncPub.publish(SYNC_STOP)

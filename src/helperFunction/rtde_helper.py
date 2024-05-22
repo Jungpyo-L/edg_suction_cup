@@ -156,7 +156,7 @@ class rtdeHelp(object):
     # def goToPose(self, goalPose, speed = 0.35, acc = 0.2, asynchronous=False):          # Alahe
         pose = self.getTransformedPose(goalPose)
         targetPose = self.getTCPPose(pose)
-        print(targetPose)
+        # print(targetPose)
         # speed = self.speed
         # acc = self.acc
         self.rtde_c.moveL(targetPose, speed, acc, asynchronous)

@@ -83,20 +83,20 @@ def main(args):
   args.domeRadius = 9999
   args.edge = 1
 
-  offset = 0
+  offset = -13
   args.offset = offset
   engagePosition[0] += offset/1000
   
-  # flat-tilt
-  engagePosition[0] -= 040e-3
-  engagePosition[1] -= 040e-3
-  args.domeRadius = 9999
-  args.edge = 0
-  
-  # # dome-tilt
-  # engagePosition[1] += 040e-3
-  # args.domeRadius = 20
+  # # flat-tilt
+  # engagePosition[0] -= 040e-3
+  # engagePosition[1] -= 040e-3
+  # args.domeRadius = 9999
   # args.edge = 0
+  
+  # dome-tilt
+  engagePosition[1] += 040e-3
+  args.domeRadius = 20
+  args.edge = 0
 
   disengagePosition = engagePosition.copy()
   disengagePosition[2] += 1e-3
@@ -269,7 +269,8 @@ def main(args):
     # # thetaList = np.linspace( 0,thetaMax,int(steps/3+1) )
     # # thetaList = np.concatenate((np.flip(thetaList), -thetaList))
     # thetaList = np.flip(thetaList)
-    thetaList = -np.array(range(0, 46, 5)) / 180*np.pi
+    # thetaList = -np.array(range(0, 46, 5)) / 180*np.pi
+    thetaList = np.array([0,0])
 
     # go to starting theta pose
     thetaIdx = 0
@@ -310,7 +311,9 @@ def main(args):
     P_vac = P_help.P_vac
     P_curr = np.mean(P_help.four_pressure)
 
-    while thetaIdx < len(thetaList):
+    # while thetaIdx < len(thetaList):
+    while thetaIdx < len(thetaList)-1:
+    # while thetaIdx < len(np.array([0,1])):
     # while thetaIdx < len(thetaList) and P_curr > P_vac:
       if thisThetaNeverVisited:
 
@@ -321,9 +324,10 @@ def main(args):
         
 
         # CONDITIONS
-        # phi = 0
+        phi = 0
         # phi = 45
         # theta = 45 * pi/180
+        theta = 0 
         print("theta: ", theta/pi*180)
         theta = thetaList[thetaIdx]
         omega_hat1 = hat(np.array([1, 0, 0]))
@@ -335,9 +339,11 @@ def main(args):
         Rw = np.dot(Rw1, Rw2)
         # Rw = Rw1
 
-        L = r_cup*np.sin(np.abs(theta)) + 2e-3
-        cx = L*np.sin(theta)
-        cz = -L*np.cos(np.abs(theta))
+        # L = r_cup*np.sin(np.abs(theta)) + 2e-3
+        # cx = L*np.sin(theta)
+        # cz = -L*np.cos(np.abs(theta))
+        cx = 0e-3
+        cz = -2e-3
 
         # FIRST GO TO A HORIZONTAL POSITION with chosen phi value (Rw2)
         T_from_tipContact = create_transform_matrix(Rw2, [0.0, cx, cz])
@@ -439,20 +445,21 @@ def main(args):
 
     # stop logger, stop sampling, and save data
     rtde_help.stopAtCurrPoseAdaptive()
-    rospy.sleep(0.5)
+    rospy.sleep(0.1)
     dataLoggerEnable(False) # start data logging
-    rospy.sleep(0.5)      
+    rospy.sleep(0.1)      
     P_help.stopSampling()
     targetPWM_Pub.publish(DUTYCYCLE_0)
-    rospy.sleep(0.5)
+    rospy.sleep(0.1)
 
     rospy.sleep(0.1)
     input("press enter to finish script")
 
     setOrientation = tf.transformations.quaternion_from_euler(pi,0,-pi/2 -pi,'sxyz') #static (s) rotating (r)
     disEngagePose = rtde_help.getPoseObj(disengagePosition, setOrientation)
-    rospy.sleep(1)
+    rospy.sleep(0.1)
     rtde_help.goToPose(disEngagePose)
+    rospy.sleep(0.1)
 
     # for i in range(2):
     #   tipContactPose = rtde_help.getCurrentPose()
@@ -463,10 +470,9 @@ def main(args):
     #   targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_from_tipContact, tipContactPose)
     #   rtde_help.goToPose(targetPose)
     #   rospy.sleep(1)
+    # rtde_help.goToPose(disEngagePose)
 
-    rtde_help.goToPose(disEngagePose)
-
-    rospy.sleep(1)
+    rospy.sleep(0.1)
     
 
     # save args
@@ -493,7 +499,7 @@ def main(args):
     T_from_tipContact = create_transform_matrix(Rw, [0.0, cx, cz - 020e-3])
     targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_from_tipContact, tipContactPose)
     rtde_help.goToPose(targetPose)
-    rospy.sleep(.5)
+    rospy.sleep(0.1)
 
     setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
     disEngagePose = rtde_help.getPoseObj(disengagePosition, setOrientation)
