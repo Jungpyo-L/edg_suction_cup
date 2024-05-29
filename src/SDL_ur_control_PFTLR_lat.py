@@ -83,7 +83,7 @@ def main(args):
   args.domeRadius = 9999
   args.edge = 1
 
-  offset = -13
+  offset = 7
   args.offset = offset
   engagePosition[0] += offset/1000
   
@@ -93,10 +93,10 @@ def main(args):
   # args.domeRadius = 9999
   # args.edge = 0
   
-  # dome-tilt
-  engagePosition[1] += 040e-3
-  args.domeRadius = 20
-  args.edge = 0
+  # # dome-tilt
+  # engagePosition[1] += 040e-3
+  # args.domeRadius = 20
+  # args.edge = 0
 
   disengagePosition = engagePosition.copy()
   disengagePosition[2] += 1e-3
