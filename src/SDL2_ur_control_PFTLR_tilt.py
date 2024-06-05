@@ -87,7 +87,7 @@ class URControl:
         self.thetaIdx = 0
 
         # PARAMETER SWEEP (theta, offset, yaw)
-        self.thetaList = -np.array(range(0, 46, 5)) / 180 * np.pi
+        self.thetaList = -np.array(range(0, 41, 5)) / 180 * np.pi
         self.args.offset = 0
         self.args.phi = 0
         # self.args.phi = 45 / 180 * np.pi
@@ -105,11 +105,11 @@ class URControl:
         # self.engagePosition[1] -= 100e-3
         # self.args.edge = -20
 
-        # # tilted flat-edge-tilt
-        # self.engagePosition[0] += 000e-3
-        # self.engagePosition[1] -= 140e-3
-        # self.args.edge = 20
-        # self.disengageOffset = 6e-3
+        # tilted flat-edge-tilt
+        self.engagePosition[0] += 000e-3
+        self.engagePosition[1] -= 140e-3
+        self.args.edge = 20
+        self.disengageOffset = 6e-3
 
         # # dome-tilt
         # self.engagePosition[0] += 000e-3
@@ -274,7 +274,7 @@ class URControl:
         self.cz = -self.L * np.cos(np.abs(self.theta))
 
         # create transformation matrix
-        self.T_from_tipContact = create_transform_matrix(self.Rw, [0.0, self.cx, self.cz])
+        self.T_from_tipContact = create_transform_matrix(self.Rw2, [0.0, self.cx, self.cz])
         self.targetPose = self.adpt_help.get_PoseStamped_from_T_initPose(self.T_from_tipContact, self.tipContactPose)
         
         # go to the target pose
@@ -286,13 +286,14 @@ class URControl:
         rospy.sleep(1.5)
         self.targetPWM_Pub.publish(self.DUTYCYCLE_0)
         
-        # self.T_from_tipContact = create_transform_matrix(self.Rw, [0.0, self.cx, self.cz])
-        # self.targetPose = self.adpt_help.get_PoseStamped_from_T_initPose(self.T_from_tipContact, self.tipContactPose)
-        # self.rtde_help.goToPose(self.targetPose)
-        # rospy.sleep(0.5)
-        # self.targetPWM_Pub.publish(self.DUTYCYCLE_100)
-        # rospy.sleep(1.5)
-        # self.targetPWM_Pub.publish(self.DUTYCYCLE_0)
+        # pwm stamp for 1.5 seconds for rotated pose
+        self.T_from_tipContact = create_transform_matrix(self.Rw, [0.0, self.cx, self.cz])
+        self.targetPose = self.adpt_help.get_PoseStamped_from_T_initPose(self.T_from_tipContact, self.tipContactPose)
+        self.rtde_help.goToPose(self.targetPose)
+        rospy.sleep(0.5)
+        self.targetPWM_Pub.publish(self.DUTYCYCLE_100)
+        rospy.sleep(1.5)
+        self.targetPWM_Pub.publish(self.DUTYCYCLE_0)
 
     def check_force_and_pressure(self):
         self.P_curr = np.mean(self.P_help.four_pressure)

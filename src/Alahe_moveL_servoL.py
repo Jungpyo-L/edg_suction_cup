@@ -67,14 +67,14 @@ def main(args):
   rtde_help = rtde_help = rtdeHelp(125)
   rospy.sleep(0.5)
   file_help = fileSaveHelp()
-  adpt_help = adaptMotionHelp(dw = 0.5, d_lat = 0.5e-3, d_z = 0.01e-3)
+  adpt_help = adaptMotionHelp(dw = 0.5, d_lat = 0.5e-3, d_z = 1e-3) # d_z = 0.03e-3 defult
 
   # Set the TCP offset and calibration matrix
-  # rospy.sleep(0.5)
-  # rtde_help.setTCPoffset([0, 0, 0.150, 0, 0, 0])
-  # if args.ch == 6:
-  #   rtde_help.setTCPoffset([0, 0, 0.150 + 0.02, 0, 0, 0])
-  # rospy.sleep(0.2)
+  rospy.sleep(0.5)
+  rtde_help.setTCPoffset([0, 0, 0.150, 0, 0, 0])
+  if args.ch == 6:
+    rtde_help.setTCPoffset([0, 0, 0.150 + 0.02, 0, 0, 0])
+  rospy.sleep(0.2)
   # rtde_help.setCalibrationMatrix()
   # rospy.sleep(0.2)
 
@@ -85,9 +85,9 @@ def main(args):
     netftSimCall = rospy.ServiceProxy('start_sim', StartSim)
 
   # pose initialization
-  disengagePosition_init =  [-0.623, .28, 0.055] # unit is in m
+  disengagePosition_init =  [-0.623, .28, 0.035] # unit is in m
   if args.ch == 6:
-    disengagePosition_init =  [-0.63, .28, 0.055 + 0.02] # unit is in m
+    disengagePosition_init =  [-0.63, .28, 0.035 + 0.05] # unit is in m
     # disengagePosition_init =  [-0.63, .28, 0.045]
   setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
   disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
@@ -103,11 +103,7 @@ def main(args):
     rtde_help.goToPose(disEngagePose)
     rospy.sleep(0.1)
 
-<<<<<<< HEAD
     for tilt in range(0, 5, 2): # 0, 2, 4
-=======
-    for tilt in range(0, 21, 2):
->>>>>>> 9a1b2a66f65c075b7e9d7ed8ec0b5eda861a43f8
       args.tilt = tilt
       print("tilt: ", tilt)
       setOrientation = tf.transformations.quaternion_from_euler(pi+args.tilt*pi/180,0,pi/2,'sxyz') #static (s) rotating (r)
@@ -123,18 +119,13 @@ def main(args):
 
         print("Start to go normal to get engage point")
         print("normal_thresh: ", normal_thresh)
-        rospy.sleep(0.3) # default is 0.5
+        rospy.sleep(0.3)                                           
 
         print("move along normal")
         targetPose = rtde_help.getCurrentPose()
         # targetPose = rtde_help.rtde_r.getActualTCPPose()
-<<<<<<< HEAD
         # targetPose = np.array([-actual[0], -actual[1],  actual[2]])
         # print("targetPose w getActual: ", targetPose)
-=======
-        # current = np.array([-targetPose[0], -targetPose[1],  targetPose[2]])
-
->>>>>>> 9a1b2a66f65c075b7e9d7ed8ec0b5eda861a43f8
         # flags and variables
         farFlag = True
         args.SuctionFlag = False
@@ -142,36 +133,26 @@ def main(args):
         # slow approach until it reach suction engage
         F_normal = FT_help.averageFz_noOffset
         targetPoseEngaged = rtde_help.getCurrentPose()
-<<<<<<< HEAD
         print("targetPose w getCurrent: ", targetPoseEngaged)
-=======
-        # targetPoseEngaged = rtde_help.rtde_r.getActualTCPPose()
->>>>>>> 9a1b2a66f65c075b7e9d7ed8ec0b5eda861a43f8
 
         while farFlag:   
           if F_normal > -args.normalForce:
-<<<<<<< HEAD
             T_move = adpt_help.get_Tmat_TranlateInZ(direction = 1)
-            targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPose)   #targetPose from transformation
+            targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPose)  
             print("targetPose: ", targetPose)
-=======
-            T_move = adpt_help.get_Tmat_TranlateInZ(direction = 1)   
-            targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPose)   #error
-            
->>>>>>> 9a1b2a66f65c075b7e9d7ed8ec0b5eda861a43f8
             # targetPose= rtde_help.rtde_r.getActualTCPPose()
-            rtde_help.goToPoseAdaptive(targetPose, time = 0.1)
+            rtde_help.goToPoseAdaptive(targetPose, time = 0.01)       #time = sync(), <0.01 for smooth moveL to servoL
             print('Adaptive target', targetPose)
             F_normal = FT_help.averageFz_noOffset
             args.normalForceActual = F_normal
-            # rospy.sleep(0.1)
+            rospy.sleep(0.1)                                       
 
           else:
             farFlag = False
             rtde_help.stopAtCurrPoseAdaptive()
             print("reached threshhold normal force: ", F_normal)
             args.normalForceUsed= F_normal
-            rospy.sleep(0.1)
+            rospy.sleep(0.1)      
             rospy.sleep(0.2)
             args.SuctionFlag = True #updating
 

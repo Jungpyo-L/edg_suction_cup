@@ -86,6 +86,9 @@ class URControl:
     def initialize_params(self):
         
         self.thetaIdx = 0
+        self.weightVal = 3
+        self.weightVal_history = []
+        self.attempt_time_history = []
 
         # PARAMETER SWEEP (theta, offset, yaw)
         # self.thetaList = -np.array(range(0, 46, 5)) / 180 * np.pi
@@ -97,10 +100,23 @@ class URControl:
 
         # CHOOSE THE FEATURE
         # flat-edge-tilt
-        self.engagePosition = [-(500e-3 - 058e-3), 200e-3 + 049e-3, 24e-3]
+        # self.engagePosition = [-(500e-3 - 058e-3), 200e-3 + 054e-3, 24e-3] # fixed
+        self.engagePosition = [-(500e-3 - 058e-3), 200e-3 + 040e-3, 24e-3] # free
         self.args.domeRadius = 9999
         self.args.edge = 1
-        self.disengageOffset = 2e-3
+        self.disengageOffset = 1e-3
+
+        # # holey flat-edge-tilt
+        # self.engagePosition[0] -= 080e-3
+        # self.engagePosition[1] += 000e-3
+        # self.args.domeRadius = -9999
+        # self.args.edge = -1
+
+        # holey dome-tilt
+        self.engagePosition[0] -= 080e-3
+        self.engagePosition[1] += 040e-3
+        self.args.domeRadius = -20
+        self.args.edge = 0
 
         # # tilted flat-edge-tilt
         # self.engagePosition[0] += 000e-3
@@ -165,8 +181,9 @@ class URControl:
             rospy.sleep(0.1)
             self.file_help = fileSaveHelp()
             rospy.sleep(0.1)
-            self.adpt_help = adaptMotionHelp(dw=0.5, d_lat=0.5e-3, d_z=0.2e-3)
+            self.adpt_help = adaptMotionHelp(dw=0.5, d_lat=0.5e-3, d_z=0.5e-3)
             rospy.sleep(0.1)
+
 
         except Exception as e:
             self.log_error("Initialization", e)
@@ -175,6 +192,8 @@ class URControl:
     def set_tcp_and_calibration(self):
         try:
             self.rtde_help.setTCPoffset([0, 0, 0.156, 0, 0, 0])
+            self.T_offset = self.adpt_help.get_Tmat_TranlateInBodyF([0., 0., -15e-3]) # small offset from the target pose
+
             rospy.sleep(0.1)
         except Exception as e:
             self.log_error("Set TCP and Calibration", e)
@@ -324,6 +343,7 @@ class URControl:
         self.targetPWM_Pub.publish(self.DUTYCYCLE_0)
 
     def check_force_and_pressure(self):
+        print("checking pressure and force...")
         self.P_array = self.P_help.four_pressure
         self.P_curr = np.mean(self.P_help.four_pressure)
         self.F_normal = self.FT_help.averageFz_noOffset
@@ -349,41 +369,62 @@ class URControl:
         self.targetPose_adjusted = self.adpt_help.get_PoseStamped_from_T_initPose(T_move, self.currentPose)
         self.rtde_help.goToPoseAdaptive(self.targetPose_adjusted)
     
-    def adjust_pose_adaptively(self):
-        try:
-            T_align = np.eye(4)
-            T_later = np.eye(4)
-            weightVal = 2
+    # def adjust_pose_adaptively(self):
+    #     try:
+    #         T_align = np.eye(4)
+    #         T_later = np.eye(4)
+    #         weightVal = 2
 
-            if self.F_normal > -(self.F_normalThres - self.Fz_tolerance):
-                T_normalMove = self.adpt_help.get_Tmat_TranlateInZ(direction=1)
-            elif self.F_normal < -(self.F_normalThres + self.Fz_tolerance):
-                T_normalMove = self.adpt_help.get_Tmat_TranlateInZ(direction=-1)
-            else:
-                T_normalMove = np.eye(4)
-                T_align, T_later, weightVal = self.adpt_help.get_Tmats_dpFxy(self.P_array, self.Fy)
-            # T_move = T_normalMove
+    #         if self.F_normal > -(self.F_normalThres - self.Fz_tolerance):
+    #             T_normalMove = self.adpt_help.get_Tmat_TranlateInZ(direction=1)
+    #         elif self.F_normal < -(self.F_normalThres + self.Fz_tolerance):
+    #             T_normalMove = self.adpt_help.get_Tmat_TranlateInZ(direction=-1)
+    #         else:
+    #             T_normalMove = np.eye(4)
+    #             T_align, T_later, weightVal = self.adpt_help.get_Tmats_dpFxy(self.P_array, self.Fy)
+    #         # T_move = T_normalMove
 
-            self.weightVal = weightVal
+    #         self.weightVal = weightVal
 
-            # HERE I CAN INJECT ROTATION AND TRANSLATION
-            # T_normalMove = self.adpt_help.get_Tmat_axialMove(self.F_normal, self.F_normalThres)
-            # T_align, T_later = self.adpt_help.get_Tmats_Suction(weightVal=0.0)
-            # T_align, T_later = self.adpt_help.get_Tmats_alignSuctionLateralMode(self.P_array, weightVal=1.0)
             
 
-            # ic(self.P_array)
-            # ic(T_align)
-            # ic(T_later)
+    #         # HERE I CAN INJECT ROTATION AND TRANSLATION
+    #         # T_normalMove = self.adpt_help.get_Tmat_axialMove(self.F_normal, self.F_normalThres)
+    #         # T_align, T_later = self.adpt_help.get_Tmats_Suction(weightVal=0.0)
+    #         # T_align, T_later = self.adpt_help.get_Tmats_alignSuctionLateralMode(self.P_array, weightVal=1.0)
+            
 
-            T_move =  T_later @ T_align @ T_normalMove
+    #         # ic(self.P_array)
+    #         # ic(T_align)
+    #         # ic(T_later)
 
-            self.currentPose = self.rtde_help.getCurrentPose()
-            self.targetPose_adjusted = self.adpt_help.get_PoseStamped_from_T_initPose(T_move, self.currentPose)
-            self.rtde_help.goToPoseAdaptive(self.targetPose_adjusted)
-        except Exception as e:
-            self.log_error("Adjust Pose Adaptively", e)
-            raise
+    #         T_move =  T_later @ T_align @ T_normalMove
+
+    #         self.currentPose = self.rtde_help.getCurrentPose()
+    #         self.targetPose_adjusted = self.adpt_help.get_PoseStamped_from_T_initPose(T_move, self.currentPose)
+    #         self.rtde_help.goToPoseAdaptive(self.targetPose_adjusted)
+    #     except Exception as e:
+    #         self.log_error("Adjust Pose Adaptively", e)
+    #         raise
+
+    # def compute_next_pose(self):
+    #     T_align = np.eye(4)
+    #     T_later = np.eye(4)
+    #     weightVal = 2
+
+    #     if self.F_normal > -(self.F_normalThres - self.Fz_tolerance):
+    #         T_normalMove = self.adpt_help.get_Tmat_TranlateInZ(direction=1)
+    #     elif self.F_normal < -(self.F_normalThres + self.Fz_tolerance):
+    #         T_normalMove = self.adpt_help.get_Tmat_TranlateInZ(direction=-1)
+    #     else:
+    #         T_normalMove = np.eye(4)
+    #         # T_align, T_later, weightVal = self.adpt_help.get_Tmats_dpFxy(self.P_array, self.Fy)
+
+    #         weightVal = 0
+    #         T_later = self.adpt_help.get_Tmat_lateralMove(self.P_array)
+
+    #     self.weightVal = weightVal
+    #     return T_normalMove, T_align, T_later
 
     def save_data_and_increment(self):
         try:
@@ -395,6 +436,10 @@ class URControl:
             reached_vacuum = abs(self.P_curr) > abs(self.P_vac)
             attempt_time = time.time() - self.previous_time
 
+            self.attempt_time_history = np.append(self.attempt_time_history, attempt_time)
+            self.weightVal_history = np.append(self.weightVal_history, self.weightVal)
+            self.reached_vacuum = reached_vacuum
+
             # ic(attempt_time)
             # ic(reached_vacuum)
             measuredCurrPose = self.rtde_help.getCurrentPose()
@@ -402,7 +447,19 @@ class URControl:
             T_Engaged_curr = self.T_Engaged_N @ T_N_curr
             angleDiff = np.arccos(T_Engaged_curr[2,2])
 
-            if reached_vacuum or attempt_time > 60 or angleDiff > self.angleLimit:
+            print("time since start of grasp attempt:", attempt_time)
+            print("Fy: ", self.Fy)
+            print("weightVal: ", self.weightVal)
+            # print("target theta: ", self.theta / pi * 180)
+            print("P_curr: ", self.P_curr)
+            print("dF: ", self.dF)
+            # print("np.abs(dF)<Fz_tolerance: ", np.abs(self.dF) < self.Fz_tolerance)
+
+            # ic(angleDiff)
+            print("")
+
+            if reached_vacuum or attempt_time > 50 or angleDiff > self.angleLimit:
+                self.reached_vacuum = reached_vacuum
                 self.rtde_help.stopAtCurrPoseAdaptive()
                 rospy.sleep(0.1)
                 self.targetPWM_Pub.publish(self.DUTYCYCLE_0)
@@ -422,48 +479,103 @@ class URControl:
                 self.args.Fz_set = self.F_normalThres
                 self.args.gamma = int(round(self.theta * 180 / pi))
                 self.args.phi = int(round(self.args.phi * 180 / pi))
+                self.args.attempt_time_history = self.attempt_time_history
+                self.args.weightVal_history = self.weightVal_history
                 self.file_help.saveDataParams(self.args, appendTxt='seb_rotational_' + 'domeRadius' + str(self.args.domeRadius) + 'mm_gamma' + str(self.args.gamma) + '_phi' + str(self.args.phi) + '_edge' + str(self.args.edge) + '_offset' + str(self.args.offset))
                 self.file_help.clearTmpFolder()
                 self.P_help.stopSampling()
                 rospy.sleep(0.1)
 
-            print("time since start of grasp attempt:", attempt_time)
-            print("Fy: ", self.Fy)
-            print("weightVal: ", self.weightVal)
-            # print("target theta: ", self.theta / pi * 180)
-            print("P_curr: ", self.P_curr)
-            print("dF: ", self.dF)
-            # print("np.abs(dF)<Fz_tolerance: ", np.abs(self.dF) < self.Fz_tolerance)
-
-            # ic(angleDiff)
-            print("")
+            
         except Exception as e:
             self.log_error("Save Data and Increment", e)
             raise
 
-    # def sweep_loop(self):
-    #     try:
-    #         self.targetPWM_Pub.publish(self.DUTYCYCLE_30)
-    #         self.thisThetaNeverVisited = True
-    #         self.P_vac = self.P_help.P_vac
-    #         self.P_curr = np.mean(self.P_help.four_pressure)
-    #         while self.thetaIdx < len(self.thetaList):
-    #             if self.thisThetaNeverVisited:
-    #                 self.start_sampling_and_logging()
-    #                 self.move_to_initial_positions(self.thetaList[self.thetaIdx])
-    #                 self.thisThetaNeverVisited = False
-    #                 self.inRangeCounter = 0
-    #                 rospy.sleep(0.5)
-    #                 self.targetPWM_Pub.publish(self.DUTYCYCLE_100)
+    def move_to_next_position_hopping(self, T_move):
+        self.targetPWM_Pub.publish(self.DUTYCYCLE_0)
+        rospy.sleep(0.1)
+        self.targetPWM_Pub.publish(self.DUTYCYCLE_100)
+        
+        # # Lift up and move to the next location
+        # T_later = self.adpt_help.get_Tmat_lateralMove(self.P_array)
+        # T_normalMove = self.adpt_help.get_Tmat_axialMove(self.F_normal, self.F_normalThres)
+        # T_move = T_later @ T_normalMove
 
-    #             self.check_force_and_pressure()
-    #             self.adjust_pose()
-    #             self.save_data_and_increment()
-    #     except Exception as e:
-    #         self.log_error("Sweep Loop", e)
-    #         raise
+        # self.measuredCurrPose = self.rtde_help.getCurrentPose()
+        # targetPoseStamped = self.adpt_help.get_PoseStamped_from_T_initPose(T_move, self.measuredCurrPose)
+        # targetSearchPoseStamped = self.adpt_help.get_PoseStamped_from_T_initPose(self.T_offset, targetPoseStamped)
+        # self.rtde_help.goToPose(targetSearchPoseStamped, speed=0.3, acc=0.6)
+        # # rospy.sleep(0.01)
+        # rospy.sleep(1.5)
+
+        # 3. lift up
+        self.measuredCurrPose = self.rtde_help.getCurrentPose()
+        targetSearchPoseStamped = self.adpt_help.get_PoseStamped_from_T_initPose(self.T_offset, self.measuredCurrPose)
+        self.rtde_help.goToPose(targetSearchPoseStamped, speed=0.3, acc=0.6)
+        rospy.sleep(0.1)
+
+        # 4. move above the next location
+        targetPoseStamped = self.adpt_help.get_PoseStamped_from_T_initPose(T_move, self.measuredCurrPose)
+        targetSearchPoseStamped = self.adpt_help.get_PoseStamped_from_T_initPose(self.T_offset, targetPoseStamped)
+        self.rtde_help.goToPose(targetSearchPoseStamped, speed=0.3, acc=0.6)
+        # rtde_help.goToPoseAdaptive(targetSearchPoseStamped, speed=0.3, acc=0.6)
+        rospy.sleep(0.1)
+
+        # 5. move to the next location and check pressure
+        self.rtde_help.goToPose(targetPoseStamped, speed=0.3, acc=0.6)
+        rospy.sleep(0.1)
+        self.P_curr = np.mean(self.P_help.four_pressure)
+        print("checking pressure after hopping...")
+        print("P_curr: ", self.P_curr)
+
+    def move_to_next_position_sliding(self, T_move):
+        self.currentPose = self.rtde_help.getCurrentPose()
+        self.targetPose_adjusted = self.adpt_help.get_PoseStamped_from_T_initPose(T_move, self.currentPose)
+        self.rtde_help.goToPoseAdaptive(self.targetPose_adjusted)
+        rospy.sleep(0.1)
+
+    def perform_motion(self, hopping=True, weightVal = 0.5):
+        # T_normalMove, T_align, T_later = self.compute_next_pose()
+
+        T_align = np.eye(4)
+        T_later = np.eye(4)
+        # weightVal = 2
+
+
+        if self.F_normal > -(self.F_normalThres - self.Fz_tolerance):
+            T_normalMove = self.adpt_help.get_Tmat_TranlateInZ(direction=1)
+            self.move_to_next_position_sliding(T_normalMove)
+        elif self.F_normal < -(self.F_normalThres + self.Fz_tolerance):
+            T_normalMove = self.adpt_help.get_Tmat_TranlateInZ(direction=-1)
+            self.move_to_next_position_sliding(T_normalMove)
+        else:
+            self.rtde_help.stopAtCurrPoseAdaptive()
+            T_normalMove = np.eye(4)
+            # T_align, T_later, weightVal = self.adpt_help.get_Tmats_dpFxy(self.P_array, self.Fy)
+            
+            if hopping:
+                print("hopping")
+                # T_align = self.adpt_help.get_Tmat_alignSuctionHop(self.P_array,weightVal=weightVal )
+                # T_later = self.adpt_help.get_Tmat_lateralHop(self.P_array)
+
+                # best trigger rotation
+                T_align, T_later, weightVal = self.adpt_help.get_Tmats_dpFxy(self.P_array, self.Fy)
+
+                T_move = T_later @ T_align @ T_normalMove
+                self.move_to_next_position_hopping(T_move)
+            else:   # sliding
+                T_align = self.adpt_help.get_Tmat_alignSuction(self.P_array,weightVal=weightVal )
+                T_later = self.adpt_help.get_Tmat_lateralMove(self.P_array, weightVal=1.0-weightVal)
+                T_move = T_later @ T_align @ T_normalMove
+                self.move_to_next_position_sliding(T_move)
+
+        self.P_curr = np.mean(self.P_help.four_pressure)
+        self.weightVal = weightVal
+
+
+        
     
-    def grasp_attempt_initRng(self):
+    def grasp_attempt_initRng(self, hopping=True, weightVal=0.0):
         try:
             self.targetPWM_Pub.publish(self.DUTYCYCLE_30)
             self.thisThetaNeverVisited = True
@@ -485,11 +597,13 @@ class URControl:
                     self.inRangeCounter = 0
                     rospy.sleep(0.5)
                     self.targetPWM_Pub.publish(self.DUTYCYCLE_100)
+                    # self.check_force_and_pressure()
 
+                
                 self.check_force_and_pressure()
-                self.adjust_pose_adaptively()
                 self.save_data_and_increment()
-            
+                self.perform_motion(hopping, weightVal=weightVal)
+                
         except Exception as e:
             self.log_error("RNG grasp attempt", e)
             raise
@@ -550,10 +664,10 @@ if __name__ == '__main__':
         # if randomized, this could be loop for a # of iterations
         for i in range(1):
             control.args.theta = 20 / 180 *pi
-            control.args.offset = -3
+            control.args.offset = 2
             # control.args.theta = random.randint(-25, 35) / 180 * pi
             # control.args.offset = random.randint(-12, 14) * 0.5
-            control.grasp_attempt_initRng()
+            control.grasp_attempt_initRng(hopping=True, weightVal=0.0)
 
         control.stop_sampling()
         control.move_to_disengage_pose()

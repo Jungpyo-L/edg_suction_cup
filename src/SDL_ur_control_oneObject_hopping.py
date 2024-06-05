@@ -90,7 +90,8 @@ def main(args):
   #========================== User Input================================================
   # engagePosition =  [-586e-3, 198e-3, 35e-3 - 004e-3]
   # engagePosition =  [-597e-3 - 001e-3, 200e-3, 118e-3]
-  engagePosition =  [-586e-3 + 10e-3, 198e-3, 35e-3 - 004e-3]     # for dome tilted
+  # engagePosition =  [-586e-3 + 10e-3, 198e-3, 35e-3 - 004e-3]     # for dome tilted
+  engagePosition = [-(500e-3 - 058e-3), 200e-3 + 049e-3, 24e-3]  # edge-tilt
   # engagePosition =  [-586e-3 + 30e-3, 198e-3, 35e-3 - 004e-3]   # for flat edge
   # engagePosition =  [-586e-3 + 29e-3, 198e-3, 35e-3 - 004e-3]   # for flat edge
   disengagePosition = engagePosition
@@ -148,8 +149,8 @@ def main(args):
   rospy.sleep(0.5)
   rtde_help.setTCPoffset([0, 0, 0.146, 0, 0, 0])
   rospy.sleep(0.2)
-  rtde_help.setCalibrationMatrix()
-  rospy.sleep(0.2)
+  # rtde_help.setCalibrationMatrix()
+  # rospy.sleep(0.2)
 
   # Set the PWM Publisher, pwm0
   targetPWM_Pub = rospy.Publisher('pwm', Int8, queue_size=1)

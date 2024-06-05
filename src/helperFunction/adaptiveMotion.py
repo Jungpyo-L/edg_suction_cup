@@ -162,8 +162,169 @@ class adaptMotionHelp(object):
         
         return T
     
+    def get_Tmat_alignSuctionHop(self, P_array, weightVal=1.0):
+        dw = self.dw * 5.0
+        dP_threshold = self.dP_threshold
+
+        P0, P1, P2, P3 = P_array
+
+        PW = (P3 + P2)/2
+        PE = (P1 + P0)/2
+        PN = (P1 + P2)/2
+        PS = (P0 + P3)/2
+
+        # pressure differentials
+        dP_WE = PW - PE        # 0 deg
+        dP_SN = PS - PN        # 90 deg
+        dP_NW_SE = P2 - P0     # 45 deg
+        dP_SW_NE = P3 - P1     # -45 deg
+
+        # always reset variables for rotation axis / pressure gradient
+        a = 0
+        b = 0
+        theta = 0
+
+        # if above threshold
+        if abs(dP_WE) > dP_threshold:
+            a += dP_WE
+
+        # if above threshold
+        if abs(dP_SN) > dP_threshold:
+            b -= dP_SN
+
+        # if either is above threshold, the increase dw
+        if abs(dP_SN) > dP_threshold or abs(dP_WE) > dP_threshold:
+            theta = dw    
+                
+        # if dP_SN > dP_threshold or dP_WE > dP_threshold:
+        #   print("decreased theta")
+        #   theta += dw
+        #   if dP_SN*dP_WE < 0:
+        #     theta += dw
+        # if dP_SN < -dP_threshold or dP_WE < -dP_threshold:
+        #   print("increased theta")
+        #   theta -= dw
+        #   if dP_SN*dP_WE > 0:
+        #     theta -= dw
+
+        # rotation axis definition from a and bBM_step
+        rot_axis = np.array([a,b,0])
+        norm = np.linalg.norm(rot_axis)
+
+        # if vector != 0, go to next pressure iteration
+        if norm == 0:
+            # skip to checking normal force and grasp condition
+            # continue
+            T = np.eye(4)
+            pass # it seems it should be pass rather than continue
+
+        else:     # if good, add 1 deg
+            rot_axis = rot_axis/norm
+
+            # publish the next target pose
+            # print("theta: ", theta)
+
+            omega_hat = hat(rot_axis)
+            Rw = scipy.linalg.expm(weightVal*theta * omega_hat)
+
+            T = create_transform_matrix(Rw, [0,0,0])
+
+        # should check normal force is high enough, if not, adjust
+        # print('dP_WE: ', dP_WE)     # Px
+        # print('dP_SN: ', dP_SN)     # Py
+        # print('dP_NW_SE: ', dP_NW_SE)
+        # print('dP_SW_NE: ', dP_SW_NE)
+        # print("a: ", a)
+        # print("b: ", b)
+        
+        return T
+    
     def get_signedTmat_alignSuction(self, P_array, Fy):
-        dw = self.dw
+        dw = self.dw*5.0
+        dP_threshold = self.dP_threshold
+
+        P0, P1, P2, P3 = P_array
+
+        PW = (P3 + P2)/2
+        PE = (P1 + P0)/2
+        PN = (P1 + P2)/2
+        PS = (P0 + P3)/2
+
+        # pressure differentials
+        dP_WE = PW - PE        # 0 deg
+        dP_SN = PS - PN        # 90 deg
+        dP_NW_SE = P2 - P0     # 45 deg
+        dP_SW_NE = P3 - P1     # -45 deg
+
+        # always reset variables for rotation axis / pressure gradient
+        a = 0
+        b = 0
+        theta = 0
+        weightVal = 3
+
+        # if above threshold
+        if abs(dP_WE) > dP_threshold:
+            a += dP_WE
+
+        # if above threshold
+        if abs(dP_SN) > dP_threshold:
+            b -= dP_SN
+
+        # if either is above threshold, the increase dw
+        if abs(dP_SN) > dP_threshold or abs(dP_WE) > dP_threshold:
+            theta = dw
+            weightVal = 1
+
+            # if on an edge, then flip the rotation sign
+            if dP_WE*Fy > 0:
+                theta  = -theta
+                weightVal = -1
+                
+        # if dP_SN > dP_threshold or dP_WE > dP_threshold:
+        #   print("decreased theta")
+        #   theta += dw
+        #   if dP_SN*dP_WE < 0:
+        #     theta += dw
+        # if dP_SN < -dP_threshold or dP_WE < -dP_threshold:
+        #   print("increased theta")
+        #   theta -= dw
+        #   if dP_SN*dP_WE > 0:
+        #     theta -= dw
+
+        # rotation axis definition from a and bBM_step
+        rot_axis = np.array([a,b,0])
+        norm = np.linalg.norm(rot_axis)
+
+        # if vector != 0, go to next pressure iteration
+        if norm == 0:
+            # skip to checking normal force and grasp condition
+            # continue
+            T = np.eye(4)
+            pass # it seems it should be pass rather than continue
+
+        else:     # if good, add 1 deg
+            rot_axis = rot_axis/norm
+
+            # publish the next target pose
+            # print("theta: ", theta)
+
+            omega_hat = hat(rot_axis)
+            Rw = scipy.linalg.expm(theta * omega_hat)
+
+            T = create_transform_matrix(Rw, [0,0,0])
+
+        # should check normal force is high enough, if not, adjust
+        # print('dP_WE: ', dP_WE)     # Px
+        # print('dP_SN: ', dP_SN)     # Py
+        # print('dP_NW_SE: ', dP_NW_SE)
+        # print('dP_SW_NE: ', dP_SW_NE)
+        # print("a: ", a)
+        # print("b: ", b)
+        
+        return T, weightVal
+    
+    def get_signedTmat_alignSuction(self, P_array, Fy):
+        dw = self.dw*5.0
         dP_threshold = self.dP_threshold
 
         P0, P1, P2, P3 = P_array
@@ -247,7 +408,51 @@ class adaptMotionHelp(object):
         return T, weightVal
 
     def get_Tmat_lateralMove(self, P_array, weightVal=1.0):
-        d_lat = self.d_lat
+        d_lat = self.d_lat*5.0
+        dP_threshold = self.dP_threshold
+
+        P0, P1, P2, P3 = P_array
+
+        PW = (P3 + P2)/2
+        PE = (P1 + P0)/2
+        PN = (P1 + P2)/2
+        PS = (P0 + P3)/2
+
+        # pressure differentials
+        dP_WE = PW - PE        # 0 deg
+        dP_SN = PS - PN        # 90 deg
+        dP_NW_SE = P2 - P0     # 45 deg
+        dP_SW_NE = P3 - P1     # -45 deg
+
+
+        dx_lat = 0.0
+        dy_lat = 0.0
+
+        # commented out by Jungpyo (220909) 
+        # # We should check if the x and y is aligned with the ATI frame
+        # if abs(dP_WE) > dP_threshold:       
+        #     dy_lat = -np.sign(dP_WE) * d_lat * weightVal
+            
+        # if abs(dP_SN) > dP_threshold:
+        #     dx_lat = np.sign(dP_SN) * d_lat * weightVal
+
+        # added by Jungpyo (220909)
+        r_p = np.zeros(2)
+        r_p[0] = -dP_WE
+        r_p[1] = -dP_SN
+        r_p = r_p / np.linalg.norm(r_p)
+
+        if abs(dP_WE) > dP_threshold:
+            dy_lat = r_p[0] * d_lat * weightVal
+            
+        if abs(dP_SN) > dP_threshold:
+            dx_lat = r_p[1] * d_lat * weightVal
+
+        T = self.get_Tmat_TranlateInBodyF([dx_lat, dy_lat, 0.0])
+        return T
+    
+    def get_Tmat_lateralHop(self, P_array, weightVal=1.0):
+        d_lat = self.d_lat*15.0
         dP_threshold = self.dP_threshold
 
         P0, P1, P2, P3 = P_array
@@ -351,7 +556,7 @@ class adaptMotionHelp(object):
             T_align, weightVal = self.get_signedTmat_alignSuction(P_array, Fy)
         # if Fy is small, then lateral move
         else:
-            T_later = self.get_Tmat_lateralMove(P_array)
+            T_later = self.get_Tmat_lateralHop(P_array)
             weightVal = 0.0
 
         # if dP*Fy < 0 then negative rotation

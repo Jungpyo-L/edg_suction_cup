@@ -148,8 +148,8 @@ def main(args):
   rospy.sleep(0.5)
   rtde_help.setTCPoffset([0, 0, 0.146, 0, 0, 0])
   rospy.sleep(0.2)
-  rtde_help.setCalibrationMatrix()
-  rospy.sleep(0.2)
+  # rtde_help.setCalibrationMatrix()
+  # rospy.sleep(0.2)
 
   # Set the PWM Publisher, pwm0
   targetPWM_Pub = rospy.Publisher('pwm', Int8, queue_size=1)

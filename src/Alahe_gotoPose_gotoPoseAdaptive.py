@@ -48,10 +48,10 @@ from helperFunction.fileSaveHelper import fileSaveHelp
 from helperFunction.rtde_helper import rtdeHelp
 from helperFunction.adaptiveMotion import adaptMotionHelp
 
-def calculate_distance(current_position, target_position):
-    return ((current_position[0] - target_position[0])**2 +
-            (current_position[1] - target_position[1])**2 +
-            (current_position[2] - target_position[2])**2) ** 0.5
+# def calculate_distance(current_position, target_position):
+#     return ((current_position[0] - target_position[0])**2 +
+#             (current_position[1] - target_position[1])**2 +
+#             (current_position[2] - target_position[2])**2) ** 0.5
 
 def main(args):
 
@@ -122,11 +122,11 @@ def main(args):
   targetPWM_Pub.publish(DUTYCYCLE_0)
   currentPose = rtde_help.getCurrentTCPPose()
 
-  current = [currentPose.pose.position.x, currentPose.pose.position.y, currentPose.pose.position.z]
-  target = [disEngagePose.pose.position.x,  disEngagePose.pose.position.y,  disEngagePose.pose.position.z]
+  # current = [currentPose.pose.position.x, currentPose.pose.position.y, currentPose.pose.position.z]
+  # target = [disEngagePose.pose.position.x,  disEngagePose.pose.position.y,  disEngagePose.pose.position.z]
 
-  distance=0
-  distance = calculate_distance(current, target)
+  # distance=0
+  # distance = calculate_distance(current, target)
   # try block so that we can have a keyboard exception
   try:
     # Go to disengage Pose
@@ -134,12 +134,12 @@ def main(args):
     rtde_help.goToPose(disEngagePose)
     rospy.sleep(0.1)
 
-    if not distance <0.00001: 
-      current_pose = rtde_help.getCurrentTCPPose() #attempt to get updated pose as the UR10 is moving
-      current1 = [current_pose.pose.position.x, current_pose.pose.position.y, current_pose.pose.position.z]
-      target1 = [disEngagePose.pose.position.x,  disEngagePose.pose.position.y,  disEngagePose.pose.position.z]
-      print("Current pose is: ", current1)
-      print("calculated distance: ", calculate_distance(current1, target1)) 
+    # if not distance <0.00001: 
+    #   current_pose = rtde_help.getCurrentTCPPose() #attempt to get updated pose as the UR10 is moving
+    #   current1 = [current_pose.pose.position.x, current_pose.pose.position.y, current_pose.pose.position.z]
+    #   target1 = [disEngagePose.pose.position.x,  disEngagePose.pose.position.y,  disEngagePose.pose.position.z]
+    #   print("Current pose is: ", current1)
+    #   print("calculated distance: ", calculate_distance(current1, target1)) 
 
     # change tile angle
     for tilt in range(0, 21, 5):
@@ -165,8 +165,8 @@ def main(args):
         rospy.sleep(0.3) # default is 0.5
 
         print("move along normal")
-        # targetPose = rtde_help.getCurrentPose()
-        targetPose = rtde_help.rtde_r.getActualTCPPose()
+        targetPose = rtde_help.getCurrentPose()
+        # targetPose = rtde_help.rtde_r.getActualTCPPose()
 
         # flags and variables
         farFlag = True
@@ -174,8 +174,8 @@ def main(args):
         
         # slow approach until it reach suction engage
         F_normal = FT_help.averageFz_noOffset
-        # targetPoseEngaged = rtde_help.getCurrentPose()
-        targetPoseEngaged = rtde_help.rtde_r.getActualTCPPose()
+        targetPoseEngaged = rtde_help.getCurrentPose()
+        # targetPoseEngaged = rtde_help.rtde_r.getActualTCPPose()
         # targetPWM_Pub.publish(DUTYCYCLE_0)
         syncPub.publish(SYNC_START)
         while farFlag:
@@ -184,7 +184,7 @@ def main(args):
             targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPose)
             #########33 Goto pose adaptive #######
             # targetPose= rtde_help.rtde_r.getActualTCPPose()
-            rtde_help.goToPoseAdaptive(targetPose, time = 0.1)
+            rtde_help.goToPoseAdaptive(targetPose, time = 0.01)
             F_normal = FT_help.averageFz_noOffset
             args.normalForceActual = F_normal
             rospy.sleep(0.1)
@@ -238,12 +238,12 @@ def main(args):
           break
 
 
-      # print("Go to disengage point")
-      # setOrientation = tf.transformations.quaternion_from_euler(pi,args.tilt*pi/180,pi/2,'sxyz') #static (s) rotating (r)
-      # disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
-      # rtde_help.goToPose(disEngagePose)
-      # # cartesian_help.goToPose(disEngagePose,wait=True)
-      # rospy.sleep(0.3)
+      print("Go to disengage point")
+      setOrientation = tf.transformations.quaternion_from_euler(pi,args.tilt*pi/180,pi/2,'sxyz') #static (s) rotating (r)
+      disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
+      rtde_help.goToPose(disEngagePose)
+      # cartesian_help.goToPose(disEngagePose,wait=True)
+      rospy.sleep(0.3)
 
 
 
@@ -254,7 +254,7 @@ def main(args):
     
 
     # P_help.stopSampling()
-    print("initial distance: ", distance)
+    # print("initial distance: ", distance)
 
     print("============ Python UR_Interface demo complete!")
   

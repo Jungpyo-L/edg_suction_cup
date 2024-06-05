@@ -86,8 +86,6 @@ class URControl:
     def initialize_params(self):
         
         self.thetaIdx = 0
-        self.weightVal_history = []
-        self.attempt_time_history = []
 
         # PARAMETER SWEEP (theta, offset, yaw)
         # self.thetaList = -np.array(range(0, 46, 5)) / 180 * np.pi
@@ -368,8 +366,6 @@ class URControl:
 
             self.weightVal = weightVal
 
-            
-
             # HERE I CAN INJECT ROTATION AND TRANSLATION
             # T_normalMove = self.adpt_help.get_Tmat_axialMove(self.F_normal, self.F_normalThres)
             # T_align, T_later = self.adpt_help.get_Tmats_Suction(weightVal=0.0)
@@ -399,9 +395,6 @@ class URControl:
             reached_vacuum = abs(self.P_curr) > abs(self.P_vac)
             attempt_time = time.time() - self.previous_time
 
-            self.attempt_time_history = np.append(self.attempt_time_history, attempt_time)
-            self.weightVal_history = np.append(self.weightVal_history, self.weightVal)
-
             # ic(attempt_time)
             # ic(reached_vacuum)
             measuredCurrPose = self.rtde_help.getCurrentPose()
@@ -409,7 +402,7 @@ class URControl:
             T_Engaged_curr = self.T_Engaged_N @ T_N_curr
             angleDiff = np.arccos(T_Engaged_curr[2,2])
 
-            if reached_vacuum or attempt_time > 50 or angleDiff > self.angleLimit:
+            if reached_vacuum or attempt_time > 60 or angleDiff > self.angleLimit:
                 self.rtde_help.stopAtCurrPoseAdaptive()
                 rospy.sleep(0.1)
                 self.targetPWM_Pub.publish(self.DUTYCYCLE_0)
@@ -429,8 +422,6 @@ class URControl:
                 self.args.Fz_set = self.F_normalThres
                 self.args.gamma = int(round(self.theta * 180 / pi))
                 self.args.phi = int(round(self.args.phi * 180 / pi))
-                self.args.attempt_time_history = self.attempt_time_history
-                self.args.weightVal_history = self.weightVal_history
                 self.file_help.saveDataParams(self.args, appendTxt='seb_rotational_' + 'domeRadius' + str(self.args.domeRadius) + 'mm_gamma' + str(self.args.gamma) + '_phi' + str(self.args.phi) + '_edge' + str(self.args.edge) + '_offset' + str(self.args.offset))
                 self.file_help.clearTmpFolder()
                 self.P_help.stopSampling()

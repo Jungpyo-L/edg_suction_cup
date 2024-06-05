@@ -87,11 +87,11 @@ def main(args):
   args.offset = offset
   engagePosition[0] += offset/1000
   
-  # flat-tilt
-  engagePosition[0] -= 040e-3
-  engagePosition[1] -= 040e-3
-  args.domeRadius = 9999
-  args.edge = 0
+  # # flat-tilt
+  # engagePosition[0] -= 040e-3
+  # engagePosition[1] -= 040e-3
+  # args.domeRadius = 9999
+  # args.edge = 0
   
   # # dome-tilt
   # engagePosition[1] += 040e-3
