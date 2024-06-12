@@ -123,9 +123,15 @@ def main(args):
   xoffset = args.xoffset
   # disengagePosition_init =  [-0.711, .107, 0.020] # seb
 
-  disengagePosition_init =  [-0.633, .280, 0.0165] # unit is in m
+  disengagePosition_init =  [-0.612, .275, 0.0157] # unit is in m
+  # disengagePosition_init =  [-0.630, .275, 0.0157] # 270 degree
+  # disengagePosition_init =  [-0.620, .274, 0.0157] # 90 degree
+
+  args.disengagePosition_init = disengagePosition_init
+
   if args.ch == 6:
-    disengagePosition_init[2] += 0.02
+    # disengagePosition_init[2] += 0.02
+    pass
   elif args.newCup == True:
     disengagePosition_init[2] += 0.05
   setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
@@ -156,7 +162,7 @@ def main(args):
       #   elif args.newCup == True:
       #     engage_z = engage_z + 49e-3
       if args.ch == 6:
-        engage_z = disengagePosition_init[2] - 4e-3
+        engage_z = disengagePosition_init[2] - 4e-3 - 0.5e-3
       else:
         engage_z = disengagePosition_init[2] - 4e-3
       
@@ -211,7 +217,9 @@ def main(args):
 
     input("Press <Enter> to start to data collection")
     startAngleFlag = True
-    for j in range(xoffset, 16):
+    xoffsets = np.arange(xoffset, 5, 1)
+    # for j in range(xoffset, 16):
+    for j in xoffsets:
 
       print("Move to the upated disengage point")
       # add offset to the disengage position
@@ -294,8 +302,8 @@ def main(args):
         rospy.sleep(0.1)    
 
         # save data and clear the temporary folder
-        # file_help.saveDataParams(args, appendTxt='jp_lateral_'+'corner_' + str(args.corner)+'_xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta)+'_material_' + str(args.material))
-        file_help.saveDataParams(args, appendTxt='jp_lateral_'+'shorten_mouse'+'_xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta)+'_material_' + str(args.material))
+        file_help.saveDataParams(args, appendTxt='jp_lateral_'+'corner_' + str(args.corner)+'_xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta)+'_material_' + str(args.material))
+        # file_help.saveDataParams(args, appendTxt='jp_lateral_'+'shorten_mouse'+'_xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta)+'_material_' + str(args.material))
         # file_help.saveDataParams(args, appendTxt='sdl_lateral_' +'xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta))
         file_help.clearTmpFolder()
         P_help.stopSampling()
@@ -344,7 +352,7 @@ if __name__ == '__main__':
   parser.add_argument('--useStoredData', type=bool, help='take image or use existingFile', default=False)
   parser.add_argument('--storedDataDirectory', type=str, help='location of target saved File', default="")
   parser.add_argument('--startIdx', type=int, help='startIndex Of the pose List', default= 0)
-  parser.add_argument('--xoffset', type=int, help='x direction offset', default= 0)
+  parser.add_argument('--xoffset', type=int, help='x direction offset', default= -4)
   parser.add_argument('--angle', type=int, help='angles of exploration', default= 360)
   parser.add_argument('--startAngle', type=int, help='angles of exploration', default= 0)
   parser.add_argument('--primitives', type=str, help='types of primitives (edge, corner, etc.)', default= "edge")

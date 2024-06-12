@@ -460,6 +460,130 @@ class adaptMotionHelp(object):
         PW = (P3 + P2)/2
         PE = (P1 + P0)/2
         PN = (P1 + P2)/2
+
+        self.currentPose = self.rtde_help.getCurrentPose()
+        self.targetPose_adjusted = self.adpt_help.get_PoseStamped_from_T_initPose(T_move, self.currentPose)
+        self.rtde_help.goToPoseAdaptive(self.targetPose_adjusted)
+    
+    # def adjust_pose_adaptively(self):
+    #     try:
+    #         T_align = np.eye(4)
+    #         T_later = np.eye(4)
+    #         weightVal = 2
+
+    #         if self.F_normal > -(self.F_normalThres - self.Fz_tolerance):
+    #             T_normalMove = self.adpt_help.get_Tmat_TranlateInZ(direction=1)
+    #         elif self.F_normal < -(self.F_normalThres + self.Fz_tolerance):
+    #             T_normalMove = self.adpt_help.get_Tmat_TranlateInZ(direction=-1)
+    #         else:
+    #             T_normalMove = np.eye(4)
+    #             T_align, T_later, weightVal = self.adpt_help.get_Tmats_dpFxy(self.P_array, self.Fy)
+    #         # T_move = T_normalMove
+
+    #         self.weightVal = weightVal
+
+            
+
+    #         # HERE I CAN INJECT ROTATION AND TRANSLATION
+    #         # T_normalMove = self.adpt_help.get_Tmat_axialMove(self.F_normal, self.F_normalThres)
+    #         # T_align, T_later = self.adpt_help.get_Tmats_Suction(weightVal=0.0)
+    #         # T_align, T_later = self.adpt_help.get_Tmats_alignSuctionLateralMode(self.P_array, weightVal=1.0)
+            
+
+    #         # ic(self.P_array)
+    #         # ic(T_align)
+    #         # ic(T_later)
+
+    #         T_move =  T_later @ T_align @ T_normalMove
+
+    #         self.currentPose = self.rtde_help.getCurrentPose()
+    #         self.targetPose_adjusted = self.adpt_help.get_PoseStamped_from_T_initPose(T_move, self.currentPose)
+    #         self.rtde_help.goToPoseAdaptive(self.targetPose_adjusted)
+    #     except Exception as e:
+    #         self.log_error("Adjust Pose Adaptively", e)
+    #         raise
+
+    # def compute_next_pose(self):
+    #     T_align = np.eye(4)
+    #     T_later = np.eye(4)
+    #     weightVal = 2
+
+    #     if self.F_normal > -(self.F_normalThres - self.Fz_tolerance):
+    #         T_normalMove = self.adpt_help.get_Tmat_TranlateInZ(direction=1)
+    #     elif self.F_normal < -(self.F_normalThres + self.Fz_tolerance):
+    #         T_normalMove = self.adpt_help.get_Tmat_TranlateInZ(direction=-1)
+    #     else:
+    #         T_normalMove = np.eye(4)
+    #         # T_align, T_later, weightVal = self.adpt_help.get_Tmats_dpFxy(self.P_array, self.Fy)
+
+    #         weightVal = 0
+    #         T_later = self.adpt_help.get_Tmat_lateralMove(self.P_array)
+
+    #     self.weightVal = weightVal
+    #     return T_normalMove, T_align, T_later
+
+
+        self.currentPose = self.rtde_help.getCurrentPose()
+        self.targetPose_adjusted = self.adpt_help.get_PoseStamped_from_T_initPose(T_move, self.currentPose)
+        self.rtde_help.goToPoseAdaptive(self.targetPose_adjusted)
+    
+    # def adjust_pose_adaptively(self):
+    #     try:
+    #         T_align = np.eye(4)
+    #         T_later = np.eye(4)
+    #         weightVal = 2
+
+    #         if self.F_normal > -(self.F_normalThres - self.Fz_tolerance):
+    #             T_normalMove = self.adpt_help.get_Tmat_TranlateInZ(direction=1)
+    #         elif self.F_normal < -(self.F_normalThres + self.Fz_tolerance):
+    #             T_normalMove = self.adpt_help.get_Tmat_TranlateInZ(direction=-1)
+    #         else:
+    #             T_normalMove = np.eye(4)
+    #             T_align, T_later, weightVal = self.adpt_help.get_Tmats_dpFxy(self.P_array, self.Fy)
+    #         # T_move = T_normalMove
+
+    #         self.weightVal = weightVal
+
+            
+
+    #         # HERE I CAN INJECT ROTATION AND TRANSLATION
+    #         # T_normalMove = self.adpt_help.get_Tmat_axialMove(self.F_normal, self.F_normalThres)
+    #         # T_align, T_later = self.adpt_help.get_Tmats_Suction(weightVal=0.0)
+    #         # T_align, T_later = self.adpt_help.get_Tmats_alignSuctionLateralMode(self.P_array, weightVal=1.0)
+            
+
+    #         # ic(self.P_array)
+    #         # ic(T_align)
+    #         # ic(T_later)
+
+    #         T_move =  T_later @ T_align @ T_normalMove
+
+    #         self.currentPose = self.rtde_help.getCurrentPose()
+    #         self.targetPose_adjusted = self.adpt_help.get_PoseStamped_from_T_initPose(T_move, self.currentPose)
+    #         self.rtde_help.goToPoseAdaptive(self.targetPose_adjusted)
+    #     except Exception as e:
+    #         self.log_error("Adjust Pose Adaptively", e)
+    #         raise
+
+    # def compute_next_pose(self):
+    #     T_align = np.eye(4)
+    #     T_later = np.eye(4)
+    #     weightVal = 2
+
+    #     if self.F_normal > -(self.F_normalThres - self.Fz_tolerance):
+    #         T_normalMove = self.adpt_help.get_Tmat_TranlateInZ(direction=1)
+    #     elif self.F_normal < -(self.F_normalThres + self.Fz_tolerance):
+    #         T_normalMove = self.adpt_help.get_Tmat_TranlateInZ(direction=-1)
+    #     else:
+    #         T_normalMove = np.eye(4)
+    #         # T_align, T_later, weightVal = self.adpt_help.get_Tmats_dpFxy(self.P_array, self.Fy)
+
+    #         weightVal = 0
+    #         T_later = self.adpt_help.get_Tmat_lateralMove(self.P_array)
+
+    #     self.weightVal = weightVal
+    #     return T_normalMove, T_align, T_later
+
         PS = (P0 + P3)/2
 
         # pressure differentials
@@ -535,7 +659,7 @@ class adaptMotionHelp(object):
         T_later = self.get_Tmat_lateralMove(P_array, weightVal=1.0-weightVal)
         return T_later, T_align
     
-    def get_Tmats_dpFxy(self, P_array, Fy):
+    def get_Tmats_dpFxy(self, P_array, Fy, weightVal=0.0):
         # hard code P_array for now
         # P_array = [0,0,30,30]
         T_align = np.eye(4)

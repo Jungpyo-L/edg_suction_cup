@@ -112,11 +112,11 @@ class URControl:
         # self.args.domeRadius = -9999
         # self.args.edge = -1
 
-        # holey dome-tilt
-        self.engagePosition[0] -= 080e-3
-        self.engagePosition[1] += 040e-3
-        self.args.domeRadius = -20
-        self.args.edge = 0
+        # # holey dome-tilt
+        # self.engagePosition[0] -= 080e-3
+        # self.engagePosition[1] += 040e-3
+        # self.args.domeRadius = -20
+        # self.args.edge = 0
 
         # # tilted flat-edge-tilt
         # self.engagePosition[0] += 000e-3
@@ -555,15 +555,18 @@ class URControl:
             
             if hopping:
                 print("hopping")
-                # T_align = self.adpt_help.get_Tmat_alignSuctionHop(self.P_array,weightVal=weightVal )
-                # T_later = self.adpt_help.get_Tmat_lateralHop(self.P_array)
+                T_align = self.adpt_help.get_Tmat_alignSuctionHop(self.P_array, weightVal=weightVal )
+                T_later = self.adpt_help.get_Tmat_lateralHop(self.P_array, weightVal=weightVal)
+                self.args.controller = "hop"
 
-                # best trigger rotation
-                T_align, T_later, weightVal = self.adpt_help.get_Tmats_dpFxy(self.P_array, self.Fy)
+                # # best trigger rotation
+                # T_align, T_later, weightVal = self.adpt_help.get_Tmats_dpFxy(self.P_array, self.Fy, weightVal=weightVal)
+                # self.args.controller = "-R_hop"
 
                 T_move = T_later @ T_align @ T_normalMove
                 self.move_to_next_position_hopping(T_move)
             else:   # sliding
+                self.args.controller = "slide"
                 T_align = self.adpt_help.get_Tmat_alignSuction(self.P_array,weightVal=weightVal )
                 T_later = self.adpt_help.get_Tmat_lateralMove(self.P_array, weightVal=1.0-weightVal)
                 T_move = T_later @ T_align @ T_normalMove
@@ -663,11 +666,11 @@ if __name__ == '__main__':
 
         # if randomized, this could be loop for a # of iterations
         for i in range(1):
-            control.args.theta = 20 / 180 *pi
-            control.args.offset = 2
+            control.args.theta = 25 / 180 *pi
+            control.args.offset = -2
             # control.args.theta = random.randint(-25, 35) / 180 * pi
             # control.args.offset = random.randint(-12, 14) * 0.5
-            control.grasp_attempt_initRng(hopping=True, weightVal=0.0)
+            control.grasp_attempt_initRng(hopping=True, weightVal=0.250)
 
         control.stop_sampling()
         control.move_to_disengage_pose()
