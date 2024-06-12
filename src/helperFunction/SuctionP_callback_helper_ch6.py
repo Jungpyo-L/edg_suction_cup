@@ -57,7 +57,8 @@ class P_CallbackHelp(object):
         self.PressureOffset *= 0
         rospy.sleep(0.5)
         # print("self.PressureBuffer: ", self.PressureBuffer)
-        self.PressureOffset = np.mean(self.PressureBuffer, axis=0)
+        buffer_copy = np.copy(self.PressureBuffer)
+        self.PressureOffset = np.mean(buffer_copy, axis=0)
         
 
     def callback_P(self, data):
