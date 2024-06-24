@@ -4,6 +4,7 @@ import rospy
 from suction_cup.msg import SensorPacket
 from suction_cup.msg import cmdPacket
 from scipy import signal
+import threading
 
 class P_CallbackHelp(object):
     def __init__(self):        
@@ -26,7 +27,8 @@ class P_CallbackHelp(object):
         self.Psensor_Num = 4
         self.BufferLen = 7
 
-        self.PressureBuffer = [[0.0]*self.Psensor_Num]*self.BufferLen
+        # self.PressureBuffer = [[0.0]*self.Psensor_Num]*self.BufferLen # JP: This may cause a problem
+        self.PressureBuffer = [[0.0] * self.Psensor_Num for _ in range(self.BufferLen)] # JP: This is the correct way to initialize a 2D list. This way, each inner list will be independent of each other.
         self.P_idx = 0
         self.startPresAvg = False
         self.four_pressure = [0.0]*self.Psensor_Num
@@ -44,6 +46,9 @@ class P_CallbackHelp(object):
         self.four_pressurePWM = np.array([0.0]*4)
         self.power = 0
         self.PressureOffset = np.array([0.0]*4)
+
+        # Initize a lock
+        self.lock = threading.Lock()
     
     def startSampling(self):
         self.msg2Sensor.cmdInput = self.START_CMD
@@ -59,6 +64,12 @@ class P_CallbackHelp(object):
         # print("self.PressureBuffer: ", self.PressureBuffer)
         buffer_copy = np.copy(self.PressureBuffer)
         self.PressureOffset = np.mean(buffer_copy, axis=0)
+
+        # # JP: The below code for acquiring lock, just in case the code keep throwing error
+        # # Acquire the lock before modifying self.PressureBuffer
+        # with self.lock:
+        #     buffer_copy = np.copy(self.PressureBuffer)
+        #     self.PressureOffset = np.mean(buffer_copy, axis=0)
         
 
     def callback_P(self, data):
@@ -76,6 +87,13 @@ class P_CallbackHelp(object):
 
         self.PressureBuffer[self.P_idx] = self.thisPres - self.PressureOffset 
         self.P_idx += 1
+
+        # # JP: The below code for acquiring lock, just in case the code keep throwing error
+        # # Acquire the lock before modifying self.PressureBuffer
+        # with self.lock:
+        #     self.PressureBuffer[self.P_idx] = self.thisPres - self.PressureOffset 
+        #     self.P_idx += 1
+
         self.PressurePWMBuffer[self.PWM_idx] = self.thisPres - self.PressureOffset 
         self.PWM_idx += 1
 

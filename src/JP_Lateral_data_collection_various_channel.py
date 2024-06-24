@@ -122,11 +122,16 @@ def main(args):
   # pose initialization
   xoffset = args.xoffset
   # disengagePosition_init =  [-0.711, .107, 0.020] # seb
+  
+  if args.corner == 180:
+    disengagePosition_init =  [-0.612, .275, 0.0157] # unit is in m
+  elif args.corner == 270:
+    disengagePosition_init =  [-0.630, .275, 0.0157] # 270 degree
+  elif args.corner == 90:
+    disengagePosition_init =  [-0.620, .274, 0.0157] # 90 degree
 
-  disengagePosition_init =  [-0.612, .275, 0.0157] # unit is in m
-  # disengagePosition_init =  [-0.630, .275, 0.0157] # 270 degree
-  # disengagePosition_init =  [-0.620, .274, 0.0157] # 90 degree
-
+  if args.material == 0:
+    disengagePosition_init[2] += 0.001
   args.disengagePosition_init = disengagePosition_init
 
   if args.ch == 6:
