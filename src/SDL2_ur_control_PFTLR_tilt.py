@@ -105,11 +105,18 @@ class URControl:
         # self.engagePosition[1] -= 100e-3
         # self.args.edge = -20
 
-        # tilted flat-edge-tilt
-        self.engagePosition[0] += 000e-3
-        self.engagePosition[1] -= 140e-3
-        self.args.edge = 20
-        self.disengageOffset = 6e-3
+        # # tilted flat-edge-tilt
+        # self.engagePosition[0] += 000e-3
+        # self.engagePosition[1] -= 140e-3
+        # self.args.edge = 20
+        # self.disengageOffset = 6e-3
+
+        # # tilted flat-edge-tilt
+        # self.engagePosition[0] -= 020e-3
+        # self.engagePosition[1] -= 140e-3
+        # self.engagePosition[2] += 15e-3
+        # self.args.edge = 20
+        # self.disengageOffset = 6e-3
 
         # # dome-tilt
         # self.engagePosition[0] += 000e-3
@@ -117,11 +124,11 @@ class URControl:
         # self.args.domeRadius = 20
         # self.args.edge = 0
 
-        # # flat-tilt
-        # self.engagePosition[0] -= 040e-3
-        # self.engagePosition[1] -= 040e-3
-        # self.args.domeRadius = 9999
-        # self.args.edge = 0
+        # flat-tilt
+        self.engagePosition[0] -= 040e-3
+        self.engagePosition[1] -= 040e-3
+        self.args.domeRadius = 9999
+        self.args.edge = 0
         
 
         # CONSTANT TRANSFORMS
