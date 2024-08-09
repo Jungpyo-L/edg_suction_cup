@@ -118,7 +118,7 @@ def main(args):
 
   # try block so that we can have a keyboard exception
   try:
-    # Go to disengage Pose
+    # Go to disengage Pose #test
     input("Press <Enter> to go disEngagePose")
     rtde_help.goToPose(disEngagePose)
     rospy.sleep(0.1)
