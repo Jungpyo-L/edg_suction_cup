@@ -11,8 +11,8 @@ import scipy
 from icecream import ic
 
 
-class hapticSearchHelp(object):
-    def __init__(self,dP_threshold=20, dw=15, P_vac = -15000, d_lat = 5e-3, d_z= 1.5e-3, n = 4):   #original
+class hapticSearch2DHelp(object):
+    def __init__(self,dP_threshold=20, dw=15, P_vac = -15000, d_lat = 5e-3, d_z= 1.5e-3, d_yaw = 1 n = 4):   #original
         # for first performance test dw=15, d_lat = 0.5e-2, d_z= 1.5e-3
         # original dw = 3, d_lat = 0.1e-2, d_z = 0.3e-3
         self.dP_threshold = dP_threshold
@@ -21,6 +21,7 @@ class hapticSearchHelp(object):
         self.P_vac = P_vac
         self.d_lat = d_lat
         self.d_z_normal = d_z
+        self.d_yaw = d_yaw
 
         # for Brownian motion (initial condition)
         self.x0 = 0 
@@ -30,7 +31,6 @@ class hapticSearchHelp(object):
         
         # for number of chambers of the suction cup
         self.n = n
-
 
     def get_ObjectPoseStamped_from_T(self,T):   #transformation
         thisPose = PoseStamped()
@@ -42,7 +42,6 @@ class hapticSearchHelp(object):
         [thisPose.pose.orientation.x, thisPose.pose.orientation.y, thisPose.pose.orientation.z,thisPose.pose.orientation.w] = quat
         return thisPose
 
-
     def get_Tmat_from_Pose(self,PoseStamped):  #format
         quat = [PoseStamped.pose.orientation.x, PoseStamped.pose.orientation.y, PoseStamped.pose.orientation.z, PoseStamped.pose.orientation.w]        
         translate = [PoseStamped.pose.position.x, PoseStamped.pose.position.y, PoseStamped.pose.position.z]
@@ -53,7 +52,6 @@ class hapticSearchHelp(object):
         rotationMat = rotation_from_quaternion(Quat)   #original
         T = create_transform_matrix(rotationMat, Position)
         return T
-
 
     def get_PoseStamped_from_T_initPose(self, T, initPoseStamped):   #transformation
         T_now = self.get_Tmat_from_Pose(initPoseStamped)    #original
@@ -93,279 +91,43 @@ class hapticSearchHelp(object):
         return direction_vector / np.linalg.norm(direction_vector)
     
     
-    def get_lateral_direction_vector(self, P_array, rotation_angle):
+    def get_lateral_direction_vector(self, P_array, rotation_angle, thereshold = True):
+        if thereshold:
+            th = self.dP_threshold
+        # check if the invididual vacuum pressure is above the threshold
+        # if not, then set the pressure to zero
+        P_array = [P if P > th else 0 for P in -P_array]
         unit_vectors = self.calcaulte_unit_vectors(self.n, rotation_angle)
         return self.calculate_direction_vector(unit_vectors, P_array)
         
+    def get_Tmat_lateralMove(self, P_array, rotation_angle, weightVal=1.0): 
+        v = self.get_lateral_direction_vector(P_array, rotation_angle, True)
+        v_step = v * self.d_lat * weightVal
+        return self.get_Tmat_TranlateInBodyF([v_step[0], v_step[1], 0.0])
         
-        d_lat = self.d_lat*5.0
-        dP_threshold = self.dP_threshold
-
-        P0, P1, P2, P3 = P_array
-
-        PW = (P3 + P2)/2
-        PE = (P1 + P0)/2
-        PN = (P1 + P2)/2
-        PS = (P0 + P3)/2
-
-        # pressure differentials
-        dP_WE = PW - PE        # 0 deg
-        dP_SN = PS - PN        # 90 deg
-        dP_NW_SE = P2 - P0     # 45 deg
-        dP_SW_NE = P3 - P1     # -45 deg
-
-
-        dx_lat = 0.0
-        dy_lat = 0.0
-
-        # added by Jungpyo (220909)
-        r_p = np.zeros(2)
-        r_p[0] = -dP_WE
-        r_p[1] = -dP_SN
-        r_p = r_p / np.linalg.norm(r_p)
-
-        if abs(dP_WE) > dP_threshold:
-            dy_lat = r_p[0] * d_lat * weightVal
-            
-        if abs(dP_SN) > dP_threshold:
-            dx_lat = r_p[1] * d_lat * weightVal
-
-        T = self.get_Tmat_TranlateInBodyF([dx_lat, dy_lat, 0.0])
-        return T
+    def get_Tmats_from_controller(self, P_array, T_array_cup, controller_str, rotation_angle, altFlag):
+        # ["normal","yaw","momentum","momentum_yaw"]
+        if controller_str == "normal":
+            T_align = np.eye(4)
+            T_later = self.get_Tmat_lateralMove(P_array, rotation_angle, weightVal=1.0)
+            T_yaw = np.eye(4)
         
-    
-    def get_Tmat_alignSuction(self, P_array, weightVal=1.0):
-        dw = self.dw
-        dP_threshold = self.dP_threshold
-
-        P0, P1, P2, P3 = P_array
-
-        PW = (P3 + P2)/2
-        PE = (P1 + P0)/2
-        PN = (P1 + P2)/2
-        PS = (P0 + P3)/2
-
-        # pressure differentials
-        dP_WE = PW - PE        # 0 deg
-        dP_SN = PS - PN        # 90 deg
-        dP_NW_SE = P2 - P0     # 45 deg
-        dP_SW_NE = P3 - P1     # -45 deg
-
-        # always reset variables for rotation axis / pressure gradient
-        a = 0
-        b = 0
-        theta = 0
-
-        # if above threshold
-        if abs(dP_WE) > dP_threshold:
-            a += dP_WE
-
-        # if above threshold
-        if abs(dP_SN) > dP_threshold:
-            b -= dP_SN
-
-        # if either is above threshold, the increase dw
-        if abs(dP_SN) > dP_threshold or abs(dP_WE) > dP_threshold:
-            theta = dw    
-
-        # rotation axis definition from a and bBM_step
-        rot_axis = np.array([a,b,0])
-        norm = np.linalg.norm(rot_axis)
-
-        # if vector != 0, go to next pressure iteration
-        if norm == 0:
-            # skip to checking normal force and grasp condition
-            # continue
-            T = np.eye(4)
-            pass # it seems it should be pass rather than continue
-
-        else:     # if good, add 1 deg
-            rot_axis = rot_axis/norm
-            omega_hat = hat(rot_axis)
-            Rw = scipy.linalg.expm(weightVal*theta * omega_hat)
-
-            T = create_transform_matrix(Rw, [0,0,0])
+        elif controller_str == "yaw":
+            T_align = np.eye(4)
+            T_later = self.get_Tmat_lateralMove(P_array, rotation_angle, weightVal=1.0)
+            T_yaw = np.eye(4)
         
-        return T
-    
-    def get_Tmat_alignSuctionHop(self, P_array, weightVal=1.0):
-        dw = self.dw * 5.0
-        dP_threshold = self.dP_threshold
+        elif controller_str == "momentum":
+            T_align = np.eye(4)
+            T_later = self.get_Tmat_lateralMove(P_array, rotation_angle, weightVal=1.0)
+            T_yaw = np.eye(4)
 
-        P0, P1, P2, P3 = P_array
+        elif controller_str == "momentum_yaw":
+            T_align = np.eye(4)
+            T_later = self.get_Tmat_lateralMove(P_array, rotation_angle, weightVal=1.0)
+            T_yaw = np.eye(4)
 
-        PW = (P3 + P2)/2
-        PE = (P1 + P0)/2
-        PN = (P1 + P2)/2
-        PS = (P0 + P3)/2
-
-        # pressure differentials
-        dP_WE = PW - PE        # 0 deg
-        dP_SN = PS - PN        # 90 deg
-        dP_NW_SE = P2 - P0     # 45 deg
-        dP_SW_NE = P3 - P1     # -45 deg
-
-        # always reset variables for rotation axis / pressure gradient
-        a = 0
-        b = 0
-        theta = 0
-
-        # if above threshold
-        if abs(dP_WE) > dP_threshold:
-            a += dP_WE
-
-        # if above threshold
-        if abs(dP_SN) > dP_threshold:
-            b -= dP_SN
-
-        # if either is above threshold, the increase dw
-        if abs(dP_SN) > dP_threshold or abs(dP_WE) > dP_threshold:
-            theta = dw    
-            
-        # rotation axis definition from a and bBM_step
-        rot_axis = np.array([a,b,0])
-        norm = np.linalg.norm(rot_axis)
-
-        # if vector != 0, go to next pressure iteration
-        if norm == 0:
-            # skip to checking normal force and grasp condition
-            # continue
-            T = np.eye(4)
-            pass # it seems it should be pass rather than continue
-
-        else:     # if good, add 1 deg
-            rot_axis = rot_axis/norm
-
-            # publish the next target pose
-            # print("theta: ", theta)
-
-            omega_hat = hat(rot_axis)
-            Rw = scipy.linalg.expm(weightVal*theta * omega_hat)
-
-            T = create_transform_matrix(Rw, [0,0,0])
-        
-        return T
-    
-    def get_signedTmat_alignSuction(self, P_array, Fy):
-        dw = self.dw*5.0
-        dP_threshold = self.dP_threshold
-
-        P0, P1, P2, P3 = P_array
-
-        PW = (P3 + P2)/2
-        PE = (P1 + P0)/2
-        PN = (P1 + P2)/2
-        PS = (P0 + P3)/2
-
-        # pressure differentials
-        dP_WE = PW - PE        # 0 deg
-        dP_SN = PS - PN        # 90 deg
-        dP_NW_SE = P2 - P0     # 45 deg
-        dP_SW_NE = P3 - P1     # -45 deg
-
-        # always reset variables for rotation axis / pressure gradient
-        a = 0
-        b = 0
-        theta = 0
-        weightVal = 3
-
-        # if above threshold
-        if abs(dP_WE) > dP_threshold:
-            a += dP_WE
-
-        # if above threshold
-        if abs(dP_SN) > dP_threshold:
-            b -= dP_SN
-
-        # if either is above threshold, the increase dw
-        if abs(dP_SN) > dP_threshold or abs(dP_WE) > dP_threshold:
-            theta = dw
-            weightVal = 1
-
-            # if on an edge, then flip the rotation sign
-            if dP_WE*Fy > 0:
-                theta  = -theta
-                weightVal = -1
-                
-        # if dP_SN > dP_threshold or dP_WE > dP_threshold:
-        #   print("decreased theta")
-        #   theta += dw
-        #   if dP_SN*dP_WE < 0:
-        #     theta += dw
-        # if dP_SN < -dP_threshold or dP_WE < -dP_threshold:
-        #   print("increased theta")
-        #   theta -= dw
-        #   if dP_SN*dP_WE > 0:
-        #     theta -= dw
-
-        # rotation axis definition from a and bBM_step
-        rot_axis = np.array([a,b,0])
-        norm = np.linalg.norm(rot_axis)
-
-        # if vector != 0, go to next pressure iteration
-        if norm == 0:
-            # skip to checking normal force and grasp condition
-            # continue
-            T = np.eye(4)
-            pass # it seems it should be pass rather than continue
-
-        else:     # if good, add 1 deg
-            rot_axis = rot_axis/norm
-
-            # publish the next target pose
-            # print("theta: ", theta)
-
-            omega_hat = hat(rot_axis)
-            Rw = scipy.linalg.expm(theta * omega_hat)
-
-            T = create_transform_matrix(Rw, [0,0,0])
-
-        # should check normal force is high enough, if not, adjust
-        # print('dP_WE: ', dP_WE)     # Px
-        # print('dP_SN: ', dP_SN)     # Py
-        # print('dP_NW_SE: ', dP_NW_SE)
-        # print('dP_SW_NE: ', dP_SW_NE)
-        # print("a: ", a)
-        # print("b: ", b)
-        
-        return T, weightVal
-
-    def get_Tmat_lateralMove(self, P_array, weightVal=1.0):
-        d_lat = self.d_lat*5.0
-        dP_threshold = self.dP_threshold
-
-        P0, P1, P2, P3 = P_array
-
-        PW = (P3 + P2)/2
-        PE = (P1 + P0)/2
-        PN = (P1 + P2)/2
-        PS = (P0 + P3)/2
-
-        # pressure differentials
-        dP_WE = PW - PE        # 0 deg
-        dP_SN = PS - PN        # 90 deg
-        dP_NW_SE = P2 - P0     # 45 deg
-        dP_SW_NE = P3 - P1     # -45 deg
-
-
-        dx_lat = 0.0
-        dy_lat = 0.0
-
-        # added by Jungpyo (220909)
-        r_p = np.zeros(2)
-        r_p[0] = -dP_WE
-        r_p[1] = -dP_SN
-        r_p = r_p / np.linalg.norm(r_p)
-
-        if abs(dP_WE) > dP_threshold:
-            dy_lat = r_p[0] * d_lat * weightVal
-            
-        if abs(dP_SN) > dP_threshold:
-            dx_lat = r_p[1] * d_lat * weightVal
-
-        T = self.get_Tmat_TranlateInBodyF([dx_lat, dy_lat, 0.0])
-        return T
-    
+        return T_later, T_align, T_yaw
     
 
     def get_Tmat_lateralMove_random(self):
@@ -407,34 +169,6 @@ class hapticSearchHelp(object):
         T_align = self.get_Tmat_alignSuction(P_array, weightVal=weightVal )
         T_later = self.get_Tmat_lateralMove(P_array, weightVal=1.0-weightVal)
         return T_later, T_align
-    
-    def get_Tmats_dpFxy(self, P_array, Fy, weightVal=0.0):
-        # hard code P_array for now
-        # P_array = [0,0,30,30]
-        T_align = np.eye(4)
-        T_later = np.eye(4)
-
-        # ic(Fy)
-        dP_WE = P_array[2] + P_array[3] - P_array[0] - P_array[1]
-
-        ic(dP_WE)
-        # ic(Fy)
-
-        # choose R or L, do or dont use weightVal?
-        weightVal = 0
-
-        # if Fy is big enough, then rotate
-        if abs(Fy) > 0.5:
-            # T_align = self.get_Tmat_alignSuction(P_array, weightVal = 1.0)
-            T_align, weightVal = self.get_signedTmat_alignSuction(P_array, Fy)
-        # if Fy is small, then lateral move
-        else:
-            T_later = self.get_Tmat_lateralHop(P_array)
-            weightVal = 0.0
-
-        # if dP*Fy < 0 then negative rotation
-
-        return T_later, T_align, weightVal
         
     
     def get_Tmats_freeRotation(self, a, b):
@@ -457,37 +191,6 @@ class hapticSearchHelp(object):
 
         T_later = np.eye(4)
         return T_later, T_align
-
-
-    def get_T_array_cup_old(self, T_array, F_array, quat):
-        Tx = T_array[0]
-        Ty = T_array[1]
-        Fx = F_array[0]
-        Fy = F_array[1]
-        dd = 0/1000      #-2, 0, 2
-        d = 0.0938 + 14/1000 + dd
-        # d = 0.09
-        
-        Rot = rotation_from_quaternion(quat)
-        # print(Rot)
-        x_axis = Rot[0,0:3]
-        y_axis = Rot[1,0:3]
-        z_axis = Rot[2,0:3]
-        # print(x_axis)
-
-        MGD = 0.02
-        Tx_cg = np.dot(y_axis, np.cross(z_axis, MGD*np.array([0,0,1])))
-        Ty_cg = np.dot(x_axis, np.cross(z_axis, MGD*np.array([0,0,1])))
-
-        MG = 0.26 * 9.81
-        F_cg = MG * np.matmul(np.linalg.inv(Rot), np.array([0,0,-1]))
-
-        Fcx = Fx - F_cg[0]
-        Fcy = Fy - F_cg[1]
-
-        T_array_cup = [Tx + d*Fcy - Tx_cg, Ty - d*Fcx - Ty_cg]
-
-        return T_array_cup
 
     def get_T_array_cup(self, T_array, F_array, quat):
         Tx = T_array[0]
@@ -518,56 +221,6 @@ class hapticSearchHelp(object):
         T_array_cup = [Tx + d*Fcy - Tx_cg, Ty - d*Fcx - Ty_cg]
 
         return T_array_cup
-
-
-    def get_Tmats_from_controller(self, P_array, T_array_cup, controller_str, altFlag):
-        # ["FTR","W1","W2","W3","W4","W5","PRLalt"]
-        if controller_str == "FTR":
-            # self.dw = 0.3 * np.pi / 180.0
-            T_align = self.get_Tmat_alignTorque(T_array_cup)
-            T_later = np.eye(4)
-        
-        elif controller_str == "NON":
-            T_align = np.eye(4)
-            T_later = np.eye(4)
-
-        elif controller_str == "BML":
-            if self.BM_step == 0:
-                self.BM_x = self.get_BM()
-                self.BM_y = self.get_BM()
-                print("self.BM_x:", self.BM_x)
-                print("self.BM_y:", self.BM_y)
-            T_align = np.eye(4)
-            T_later = self.get_Tmat_lateralMove_BM()
-            self.BM_step += 1
-
-        elif "W" in controller_str:
-            if controller_str == "W1":
-                weightVal = 0.0
-            if controller_str == "W2":
-                weightVal = 0.25
-            if controller_str == "W3":
-                weightVal = 0.5
-            if controller_str == "W4":
-                weightVal = 0.75
-            if controller_str == "W5":
-                weightVal = 1.0
-
-            T_align = self.get_Tmat_alignSuction(P_array,weightVal=weightVal )
-            T_later = self.get_Tmat_lateralMove(P_array, weightVal=1.0-weightVal)
-            
-        elif "FTRPL" in controller_str:
-            T_align = self.get_Tmat_alignTorque(T_array_cup)
-            T_later = self.get_Tmat_lateralMove(P_array, weightVal=1.0)
-
-        elif controller_str == "PRLalt":
-            if altFlag:n_step
-            
-            T_align = self.get_Tmat_alignSuction(P_array,weightVal=weightVal )
-            T_later = self.get_Tmat_lateralMove(P_array, weightVal=1.0-weightVal)
-
-
-        return T_later, T_align
 
     def get_Tmats_from_ML_model(self, P_array, FT_data, loaded_model):
         T_align = np.eye(4)
@@ -692,8 +345,6 @@ class hapticSearchHelp(object):
         # print("b: ", b)
         
         return T
-
-
 
 
     def getGoalPosestampedFromGQCNN(self, T, thisPose, initEndEffPosestamped ):
