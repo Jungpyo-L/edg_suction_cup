@@ -51,6 +51,16 @@ from helperFunction.rtde_helper import rtdeHelp
 from helperFunction.hapticSearch2D import hapticSearch2DHelp
 
 
+def pressure_order_change(P_array, ch):
+  if ch == 3:
+    P_array_new = [P_array[1], P_array[2], P_array[0]]
+  elif ch == 4:
+    P_array_new = [P_array[1], P_array[2], P_array[3], P_array[0]]
+  elif ch == 6:
+    P_array_new = [P_array[1], P_array[2], P_array[3], P_array[4], P_array[5], P_array[0]]
+  return P_array_new
+
+
 def main(args):
   if args.ch == 6:
     from helperFunction.SuctionP_callback_helper_ch6 import P_CallbackHelp
@@ -155,8 +165,10 @@ def main(args):
     # begin the haptic search
     while not suctionSuccessFlag:   # while no success in grasp, run controller until success or timeout
       
-      # P arrays to calculate Transformation matrices
-      P_array = P_help.four_pressure
+      # P arrays to calculate Transformation matrices and change the order of pressure
+      P_array_old = P_help.four_pressure
+      P_array = pressure_order_change(P_array_old, args.ch)
+      
       
       # get the current yaw angle of the suction cup
       measuredCurrPose = rtde_help.getCurrentPose()
@@ -181,7 +193,10 @@ def main(args):
 
       #=================== check attempt break conditions =================== 
       # LOOP BREAK CONDITION 1
-      P_array = P_help.four_pressure
+      P_array_old = P_help.four_pressure
+      P_array = pressure_order_change(P_array_old, args.ch)
+      if args.ch == 4:
+        P_array = [P_array_old[1], P_array_old[2], P_array_old[3], P_array_old[0]]
       reached_vacuum = all(np.array(P_array)<P_vac)
       if reached_vacuum:
         # vacuum seal formed, success!
