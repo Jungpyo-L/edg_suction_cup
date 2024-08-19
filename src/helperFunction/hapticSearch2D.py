@@ -38,6 +38,12 @@ class hapticSearch2DHelp(object):
         self.damping_factor = 0.9
         self.max_velocity_x = self.d_lat * 2
         self.max_velocity_y = self.d_lat * 2
+    
+    def get_yawRotation_from_T(self, T):
+        R = T[0:3,0:3]
+        quat = quaternion_from_matrix(R)
+        r = Rot.from_quat(quat)
+        return r.as_euler('zyx')[0]
 
     def get_ObjectPoseStamped_from_T(self,T):   #transformation
         thisPose = PoseStamped()
@@ -150,7 +156,7 @@ class hapticSearch2DHelp(object):
             T_later = self.get_Tmat_momentumMove(P_array, yaw_angle)
             T_yaw = self.get_Tmat_yawRotation()
 
-        return T_later, T_align, T_yaw
+        return T_later, T_yaw, T_align
     
 
     def get_Tmat_lateralMove_random(self):

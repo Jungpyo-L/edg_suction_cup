@@ -115,10 +115,17 @@ def main(args):
   disengagePosition =  [-0.630, .275, 0.0157]
   setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2 + pi/180*args.yaw,'sxyz') #static (s) rotating (r)
   disEngagePose = rtde_help.getPoseObj(disengagePosition, setOrientation)
+  T_init = search_help.get_Tmat_from_Pose(disEngagePose)
+  yaw_init = search_help.get_yawRotation_from_T(T_init)
+  print("yaw_init: ", yaw_init)  
   
   # set initial parameters
   suctionSuccessFlag = False
   controller_str = args.controller
+  P_vac = search_help.P_vac
+  timeLimit = 10
+  args.timeLimit = timeLimit
+  pathLimit = 50e-3
   
   # try block so that we can have a keyboard exception
   try:
@@ -126,6 +133,7 @@ def main(args):
     rtde_help.goToPose(disEngagePose)
     
     input("Press <Enter> to start the recording")
+    targetPWM_Pub.publish(DUTYCYCLE_100)
     P_help.startSampling()      
     rospy.sleep(0.5)
     P_help.setNowAsOffset()
@@ -133,95 +141,86 @@ def main(args):
 
     input("Press <Enter> to go to engagepose")
     engagePosition = copy.deepcopy(disengagePosition)
-    engagePosition[2] = disengagePosition[2] - 5e03
+    engagePosition[2] = disengagePosition[2] - 5e-3
     engagePose = rtde_help.getPoseObj(engagePosition, setOrientation)
     rtde_help.goToPose(engagePose)
 
     input("Press <Enter> to start the haptic search")
+    # set initial parameters
+    suctionSuccessFlag = False
+    controller_str = args.controller
+    P_vac = search_help.P_vac
+    startTime = time.time()
+    
+    # begin the haptic search
     while not suctionSuccessFlag:   # while no success in grasp, run controller until success or timeout
       
-      # PFT arrays to calculate Transformation matrices
+      # P arrays to calculate Transformation matrices
       P_array = P_help.four_pressure
       
       # get the current yaw angle of the suction cup
-      # Todo : get the yaw angle from the controller
       measuredCurrPose = rtde_help.getCurrentPose()
+      T_curr = search_help.get_Tmat_from_Pose(measuredCurrPose)
+      yaw_angle = search_help.get_yawRotation_from_T(T_curr)
 
       # calculate transformation matrices
-      T_align, T_later = search_help.get_Tmats_from_controller(P_array, yaw_angle, controller_str)
-      T_normalMove = search_help.get_Tmat_axialMove(F_normal, F_normalThres)
-      T_move =  T_later @ T_align @ T_normalMove # lateral --> align --> normal
+      T_later, T_yaw, T_align = search_help.get_Tmats_from_controller(P_array, yaw_angle, controller_str)
+      T_move =  T_later @ T_yaw @ T_align  # lateral --> align --> normal
 
       # move to new pose adaptively
       measuredCurrPose = rtde_help.getCurrentPose()
       currPose = search_help.get_PoseStamped_from_T_initPose(T_move, measuredCurrPose)
       rtde_help.goToPoseAdaptive(currPose)
+      
+      # calculate current angle
+      measuredCurrPose = rtde_help.getCurrentPose()
+      T_curr = search_help.get_Tmat_from_Pose(measuredCurrPose)
+      yaw_angle = search_help.get_yawRotation_from_T(T_curr)
+      args.final_yaw = yaw_angle 
 
-      # calculate axis angle
-      T_N_curr = search_help.get_Tmat_from_Pose(measuredCurrPose)          
-      T_Engaged_curr = T_Engaged_N @ T_N_curr
-      currAxisAngleToZ = np.arccos(T_N_curr[2,2])
-
-      # calculate current pos/angle
-      displacement = np.linalg.norm(T_Engaged_curr[0:3,3])
-      angleDiff = np.arccos(T_Engaged_curr[2,2])
 
       #=================== check attempt break conditions =================== 
-
       # LOOP BREAK CONDITION 1
+      P_array = P_help.four_pressure
       reached_vacuum = all(np.array(P_array)<P_vac)
-      # print("loop time: ", time.time()-prevTime)
-      # if time.time()-prevTime > 0.1:
-        # print("Time exceed 0.1 sec~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-      # print("np.array(P_array): ", np.array(P_array))
-      # print("reached vacuum: ", reached_vacuum)
-
       if reached_vacuum:
         # vacuum seal formed, success!
         suctionSuccessFlag = True
+        args.elapsedTime = time.time()-startTime
         print("Suction engage succeeded with controller")
-
         # stop at the last pose
         rtde_help.stopAtCurrPoseAdaptive()
-
         # keep X sec of data after alignment is complete
         rospy.sleep(0.1)
         break
       
       # LOOP BREAK CONDITION 2
       # if timeout, or displacement/angle passed, failed
-      elif time.time()-startTime >timeLimit or displacement > dispLimit or angleDiff > angleLimit or currAxisAngleToZ < (np.pi*2/3):
+      elif time.time()-startTime >timeLimit:
         args.timeOverFlag = time.time()-startTime >timeLimit
-        args.dispOverFlag = displacement > dispLimit
-        args.angleOverFlag = angleDiff > angleLimit
-        args.angleTooFlatFlag = currAxisAngleToZ < (np.pi*2/3)
-
+        args.elapsedTime = time.time()-startTime
         suctionSuccessFlag = False
         print("Suction controller failed!")
-        sequentialFailures+=1
 
         # stop at the last pose
         rtde_help.stopAtCurrPoseAdaptive()
         targetPWM_Pub.publish(DUTYCYCLE_0)
         
-
         # keep X sec of data after alignment is complete
         rospy.sleep(0.1)
         break
 
-
-
-
-
-    input("Press <Enter> to go stop the recording")
+    args.suction = suctionSuccessFlag
+    print("Press <Enter> to go stop the recording")
     # stop data logging
     rospy.sleep(0.2)
     dataLoggerEnable(False)
     rospy.sleep(0.2)
     P_help.stopSampling()
+    targetPWM_Pub.publish(DUTYCYCLE_0)
 
     # save data and clear the temporary folder
-    file_help.saveDataParams(args, appendTxt='jp_lateral_'+'corner_' + str(args.corner)+'_xoffset_' + str(args.xoffset)+'_theta_' + str(args.theta)+'_material_' + str(args.material))
+    file_help.saveDataParams(args, appendTxt='jp_2D_HapticSearch_' + str(args.primitives)+'_controller_'+ str(args.controller) +'_material_' + str(args.material))
     file_help.clearTmpFolder()
     
 
@@ -242,8 +241,6 @@ if __name__ == '__main__':
   parser.add_argument('--material', type=int, help='Moldmax: 0, Elastic50: 1, agilus30: 2', default= 1)
   parser.add_argument('--tilt', type=int, help='tilted angle of the suction cup', default= 0)
   parser.add_argument('--yaw', type=int, help='yaw angle of the suction cup', default= 0)
-  parser.add_argument('--suction', type=bool, help='whether suction succeed or not', default= False)
-
 
   args = parser.parse_args()    
   
