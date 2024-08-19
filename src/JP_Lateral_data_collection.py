@@ -111,7 +111,9 @@ def main(args):
   
   # pose initialization
   xoffset = args.xoffset
-  disengagePosition_init =  [-0.597, .211, 0.025] # unit is in m
+  # disengagePosition_init =  [-0.597, .211, 0.025] # unit is in m
+  # setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
+  disengagePosition_init =  [(450e-3 + 88e-3), -(200e-3 + 004e-3), 32e-3]
   setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
   disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
 
@@ -150,8 +152,8 @@ def main(args):
         targetPose = rtde_help.getPoseObj(disengagePosition, targetOrientation)
         targetPose_init = targetPose
         rtde_help.goToPose(targetPose)
-        # targetPWM_Pub.publish(DUTYCYCLE_100)
-        targetPWM_Pub.publish(DUTYCYCLE_0)
+        targetPWM_Pub.publish(DUTYCYCLE_100)
+        # targetPWM_Pub.publish(DUTYCYCLE_0)
         syncPub.publish(SYNC_RESET)
         rospy.sleep(0.1)
 
