@@ -12,7 +12,7 @@ from icecream import ic
 
 
 class hapticSearch2DHelp(object):
-    def __init__(self,dP_threshold=20, dw=15, P_vac = -15000, d_lat = 5e-3, d_z= 1.5e-3, d_yaw = 1, n_ch = 4):   #original
+    def __init__(self,dP_threshold=10, dw=15, P_vac = -15000, d_lat = 1.5e-3, d_z= 1.5e-3, d_yaw = 0.3, n_ch = 4):   #original
         # for first performance test dw=15, d_lat = 0.5e-2, d_z= 1.5e-3
         # original dw = 3, d_lat = 0.1e-2, d_z = 0.3e-3
         self.dP_threshold = dP_threshold
@@ -34,10 +34,10 @@ class hapticSearch2DHelp(object):
         
         # for momemtum controller
         self.velocity = np.array([0.0, 0.0]) # initial velocity
-        self.d_lat_momentum = self.d_lat * 0.5 # initial step size for momentum controller
+        self.d_lat_momentum = self.d_lat * 0.3 # initial step size for momentum controller
         self.damping_factor = 0.9
-        self.max_velocity_x = self.d_lat * 2
-        self.max_velocity_y = self.d_lat * 2
+        self.max_velocity_x = self.d_lat * 1.5
+        self.max_velocity_y = self.d_lat * 1.5
     
     def get_yawRotation_from_T(self, T):
         R = T[0:3,0:3]
@@ -94,44 +94,92 @@ class hapticSearch2DHelp(object):
         return self.get_Tmat_TranlateInBodyF(translate = offset)
     
     # Sould set the first chamber of the suction cup is in direction of the positive x-axis
-    def calculate_unit_vectors(self, num_chambers, rotation_angle):
-        return [np.array([np.cos(2 * np.pi / (num_chambers * 2) + 2 * np.pi * i / num_chambers + np.radians(rotation_angle)),
-                      np.sin(2 * np.pi / (num_chambers * 2) + 2 * np.pi * i / num_chambers + np.radians(rotation_angle))])
+    def calculate_unit_vectors(self, num_chambers, yaw_angle):
+        return [np.array([np.cos(2 * np.pi / (num_chambers * 2) + 2 * np.pi * i / num_chambers + np.radians(yaw_angle)),
+                      np.sin(2 * np.pi / (num_chambers * 2) + 2 * np.pi * i / num_chambers + np.radians(yaw_angle))])
             for i in range(num_chambers)]
 
     def calculate_direction_vector(self, unit_vectors, vacuum_pressures):
         direction_vector = np.sum([vp * uv for vp, uv in zip(vacuum_pressures, unit_vectors)], axis=0)
-        return direction_vector / np.linalg.norm(direction_vector)
+        return direction_vector / np.linalg.norm(direction_vector) if np.linalg.norm(direction_vector) > 0 else np.array([0, 0])
     
     def get_lateral_direction_vector(self, P_array, yaw_angle, thereshold = True):
         if thereshold:
             th = self.dP_threshold
+        else:
+            th = 0
+        # make the pressure array positive (vacuum pressure)
+        P_array = [-P for P in P_array]
         # check if the invididual vacuum pressure is above the threshold
         # if not, then set the pressure to zero
-        P_array = [P if P > th else 0 for P in -P_array]
-        unit_vectors = self.calcaulte_unit_vectors(self.n, yaw_angle)
+        P_array = [P if P > th else 0 for P in P_array]
+        unit_vectors = self.calculate_unit_vectors(self.n, yaw_angle)
         return self.calculate_direction_vector(unit_vectors, P_array)
         
-    def get_Tmat_lateralMove(self, P_array, yaw_angle): 
+    def get_Tmat_lateralMove(self, P_array, yaw_angle):
         v = self.get_lateral_direction_vector(P_array, yaw_angle, True)
         v_step = v * self.d_lat
-        return self.get_Tmat_TranlateInBodyF([v_step[0], v_step[1], 0.0])
+        # caution: the x and y axis are swapped in the coordinate system
+        # positive x-axis is towards south
+        # positive y-axis is towards west
+        # positive z-axis is towards down
+        return self.get_Tmat_TranlateInBodyF([-v_step[1], -v_step[0], 0.0])
+    
+    def get_Tmat_lateralMoveOld(self, P_array, yaw_angle, weightVal = 1.0):
+        d_lat = self.d_lat
+        dP_threshold = self.dP_threshold
+
+        P1, P2, P3, P0 = P_array
+
+        PW = (P3 + P2)/2
+        PE = (P1 + P0)/2
+        PN = (P1 + P2)/2
+        PS = (P0 + P3)/2
+
+        # pressure differentials
+        dP_WE = PW - PE        # 0 deg
+        dP_SN = PS - PN        # 90 deg
+        dP_NW_SE = P2 - P0     # 45 deg
+        dP_SW_NE = P3 - P1     # -45 deg
+
+        dx_lat = 0.0
+        dy_lat = 0.0
+
+        # added by Jungpyo (220909)
+        r_p = np.zeros(2)
+        r_p[0] = -dP_WE
+        r_p[1] = -dP_SN
+        r_p = r_p / np.linalg.norm(r_p)
+
+        if abs(dP_WE) > dP_threshold:
+            dy_lat = r_p[0] * d_lat * weightVal
+            
+        if abs(dP_SN) > dP_threshold:
+            dx_lat = r_p[1] * d_lat * weightVal
+
+        T = self.get_Tmat_TranlateInBodyF([dx_lat, dy_lat, 0.0])
+        return T
     
     # get Tmat for momentum controller
     def get_Tmat_momentumMove(self, P_array, yaw_angle):
-        v = self.get_lateral_direction_vector(P_array, yaw_angle, False)
+        v = self.get_lateral_direction_vector(P_array, yaw_angle, True)
         self.velocity = self.damping_factor * self.velocity + v * self.d_lat
         # limit the velocity
         self.velocity[0] = np.clip(self.velocity[0], -self.max_velocity_x, self.max_velocity_x)
         self.velocity[1] = np.clip(self.velocity[1], -self.max_velocity_y, self.max_velocity_y)
-        return self.get_Tmat_TranlateInBodyF([self.velocity[0], self.velocity[1], 0.0])
+        # caution: the x and y axis are swapped in the coordinate system
+        # positive x-axis is towards south
+        # positive y-axis is towards west
+        # positive z-axis is towards down
+        return self.get_Tmat_TranlateInBodyF([-self.velocity[1], -self.velocity[0], 0.0])
     
     def get_Tmat_yawRotation(self):
-        dyaw = self.d_yaw
+        d_yaw = self.d_yaw * np.pi/180
         # rotation axis to the z-direction
-        rot_axis = np.array([0,0,1])
+        # positive z-axis is towards down
+        rot_axis = np.array([0,0,-1])
         omega_hat = hat(rot_axis)
-        Rw = scipy.linalg.expm(dyaw * omega_hat)   
+        Rw = scipy.linalg.expm(d_yaw * omega_hat)   
         return create_transform_matrix(Rw, [0,0,0])
         
     def get_Tmats_from_controller(self, P_array, yaw_angle, controller_str):

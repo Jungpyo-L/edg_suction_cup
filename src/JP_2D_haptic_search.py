@@ -60,6 +60,11 @@ def pressure_order_change(P_array, ch):
     P_array_new = [P_array[1], P_array[2], P_array[3], P_array[4], P_array[5], P_array[0]]
   return P_array_new
 
+def convert_yawAngle(yaw_radian):
+  yaw_angle = yaw_radian*180/pi
+  yaw_angle = -yaw_angle - 90
+  return yaw_angle
+
 
 def main(args):
   if args.ch == 6:
@@ -90,7 +95,7 @@ def main(args):
   rtde_help = rtde_help = rtdeHelp(125)
   rospy.sleep(0.5)
   file_help = fileSaveHelp()
-  search_help = hapticSearch2DHelp(dw = 0.5, d_lat = 0.5e-3, d_z = 0.05e-3, d_yaw=1, n_ch = args.ch)
+  search_help = hapticSearch2DHelp(d_lat = 1e-3, d_yaw=1, n_ch = args.ch) # d_lat is important for the haptic search (if it is too small, the controller will fail)
 
   # Set the TCP offset and calibration matrix
   rospy.sleep(0.5)
@@ -107,6 +112,7 @@ def main(args):
 
   # Set the PWM Publisher  
   targetPWM_Pub = rospy.Publisher('pwm', Int8, queue_size=1)
+  rospy.sleep(0.5)
   targetPWM_Pub.publish(DUTYCYCLE_0)
 
   # Set the synchronization Publisher
@@ -122,12 +128,12 @@ def main(args):
   datadir = file_help.ResultSavingDirectory
   
   # Set the disengage pose
-  disengagePosition =  [-0.630, .275, 0.0157]
+  # disengagePosition =  [-0.630, .265, 0.0151 + 5e-3] # nozzle
+  # disengagePosition =  [-0.665, .305, 0.0151 + 5e-3] # dumbbell
+  disengagePosition =  [-0.642, .290, 0.0151 + 5e-3] # dumbbell lateral motion test
   setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2 + pi/180*args.yaw,'sxyz') #static (s) rotating (r)
   disEngagePose = rtde_help.getPoseObj(disengagePosition, setOrientation)
-  T_init = search_help.get_Tmat_from_Pose(disEngagePose)
-  yaw_init = search_help.get_yawRotation_from_T(T_init)
-  print("yaw_init: ", yaw_init)  
+  
   
   # set initial parameters
   suctionSuccessFlag = False
@@ -137,33 +143,37 @@ def main(args):
   args.timeLimit = timeLimit
   pathLimit = 50e-3
   
+
   # try block so that we can have a keyboard exception
   try:
     input("Press <Enter> to go to disengagepose")
     rtde_help.goToPose(disEngagePose)
     
-    input("Press <Enter> to start the recording")
+    print("Start the haptic search")
     targetPWM_Pub.publish(DUTYCYCLE_100)
     P_help.startSampling()      
     rospy.sleep(0.5)
     P_help.setNowAsOffset()
     dataLoggerEnable(True)
 
-    input("Press <Enter> to go to engagepose")
+    print("move down to go to engagepose")
     engagePosition = copy.deepcopy(disengagePosition)
-    engagePosition[2] = disengagePosition[2] - 5e-3
+    engagePosition[2] = disengagePosition[2] - 6.5e-3 # if the engage position is too loose, the controller will fail (probably because of the horizontal flow)
     engagePose = rtde_help.getPoseObj(engagePosition, setOrientation)
     rtde_help.goToPose(engagePose)
 
-    input("Press <Enter> to start the haptic search")
+    print("Start the haptic search")
     # set initial parameters
     suctionSuccessFlag = False
     controller_str = args.controller
     P_vac = search_help.P_vac
     startTime = time.time()
+    iteration_count = 0 # to check the frequency of the loop
     
     # begin the haptic search
     while not suctionSuccessFlag:   # while no success in grasp, run controller until success or timeout
+
+      iteration_start_time = time.time()
       
       # P arrays to calculate Transformation matrices and change the order of pressure
       P_array_old = P_help.four_pressure
@@ -173,7 +183,7 @@ def main(args):
       # get the current yaw angle of the suction cup
       measuredCurrPose = rtde_help.getCurrentPose()
       T_curr = search_help.get_Tmat_from_Pose(measuredCurrPose)
-      yaw_angle = search_help.get_yawRotation_from_T(T_curr)
+      yaw_angle = convert_yawAngle(search_help.get_yawRotation_from_T(T_curr))
 
       # calculate transformation matrices
       T_later, T_yaw, T_align = search_help.get_Tmats_from_controller(P_array, yaw_angle, controller_str)
@@ -182,21 +192,18 @@ def main(args):
       # move to new pose adaptively
       measuredCurrPose = rtde_help.getCurrentPose()
       currPose = search_help.get_PoseStamped_from_T_initPose(T_move, measuredCurrPose)
-      rtde_help.goToPoseAdaptive(currPose)
+      rtde_help.goToPoseAdaptive_2Dhaptic(currPose)
       
       # calculate current angle
       measuredCurrPose = rtde_help.getCurrentPose()
       T_curr = search_help.get_Tmat_from_Pose(measuredCurrPose)
-      yaw_angle = search_help.get_yawRotation_from_T(T_curr)
-      args.final_yaw = yaw_angle 
+      args.final_yaw = convert_yawAngle(search_help.get_yawRotation_from_T(T_curr))
 
 
       #=================== check attempt break conditions =================== 
       # LOOP BREAK CONDITION 1
       P_array_old = P_help.four_pressure
       P_array = pressure_order_change(P_array_old, args.ch)
-      if args.ch == 4:
-        P_array = [P_array_old[1], P_array_old[2], P_array_old[3], P_array_old[0]]
       reached_vacuum = all(np.array(P_array)<P_vac)
       if reached_vacuum:
         # vacuum seal formed, success!
@@ -206,7 +213,7 @@ def main(args):
         # stop at the last pose
         rtde_help.stopAtCurrPoseAdaptive()
         # keep X sec of data after alignment is complete
-        rospy.sleep(0.1)
+        rospy.sleep(1)
         break
       
       # LOOP BREAK CONDITION 2
@@ -225,6 +232,18 @@ def main(args):
         rospy.sleep(0.1)
         break
 
+      # check loop frequency
+      iteration_count += 1
+      iteration_end_time = time.time()
+
+       # Measure frequency every 100 iterations
+      if iteration_count % 100 == 0:
+          current_time = time.time()
+          elapsed_time = current_time - startTime
+          frequency = iteration_count / elapsed_time
+          # print(f"Current control frequency after {iteration_count} iterations: {frequency} Hz")
+      
+
     args.suction = suctionSuccessFlag
     print("Press <Enter> to go stop the recording")
     # stop data logging
@@ -238,22 +257,26 @@ def main(args):
     file_help.saveDataParams(args, appendTxt='jp_2D_HapticSearch_' + str(args.primitives)+'_controller_'+ str(args.controller) +'_material_' + str(args.material))
     file_help.clearTmpFolder()
     
-
+    # go to disengage pose
+    print("Start to go to disengage pose")
+    rtde_help.goToPose(disEngagePose)
 
     print("============ Python UR_Interface demo complete!")
   except rospy.ROSInterruptException:
+    targetPWM_Pub.publish(DUTYCYCLE_0)
     return
   except KeyboardInterrupt:
+    targetPWM_Pub.publish(DUTYCYCLE_0)
     return  
 
 
 if __name__ == '__main__':  
   import argparse
   parser = argparse.ArgumentParser()
-  parser.add_argument('--primitives', type=str, help='types of primitives (edge, corner, etc.)', default= "edge")
+  parser.add_argument('--primitives', type=str, help='types of primitives (nozzle, dumbbell, etc.)', default= "nozzle")
   parser.add_argument('--ch', type=int, help='number of channel', default= 4)
   parser.add_argument('--controller', type=str, help='2D haptic contollers', default= "normal")
-  parser.add_argument('--material', type=int, help='Moldmax: 0, Elastic50: 1, agilus30: 2', default= 1)
+  parser.add_argument('--material', type=int, help='Moldmax: 0, Elastic50: 1, agilus30: 2', default= 0)
   parser.add_argument('--tilt', type=int, help='tilted angle of the suction cup', default= 0)
   parser.add_argument('--yaw', type=int, help='yaw angle of the suction cup', default= 0)
 
