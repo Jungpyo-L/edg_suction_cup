@@ -12,7 +12,7 @@ from icecream import ic
 
 
 class hapticSearch2DHelp(object):
-    def __init__(self,dP_threshold=10, dw=15, P_vac = -15000, d_lat = 1.5e-3, d_z= 1.5e-3, d_yaw = 0.3, n_ch = 4):   #original
+    def __init__(self,dP_threshold=10, dw=15, P_vac = -20000, d_lat = 1.5e-3, d_z= 1.5e-3, d_yaw = 0.3, n_ch = 4):   #original
         # for first performance test dw=15, d_lat = 0.5e-2, d_z= 1.5e-3
         # original dw = 3, d_lat = 0.1e-2, d_z = 0.3e-3
         self.dP_threshold = dP_threshold
@@ -94,9 +94,10 @@ class hapticSearch2DHelp(object):
         return self.get_Tmat_TranlateInBodyF(translate = offset)
     
     # Sould set the first chamber of the suction cup is in direction of the positive x-axis
+    # Keep in mind that yaw angle doen't need to be considered in this function because it is about body frame
     def calculate_unit_vectors(self, num_chambers, yaw_angle):
-        return [np.array([np.cos(2 * np.pi / (num_chambers * 2) + 2 * np.pi * i / num_chambers + np.radians(yaw_angle)),
-                      np.sin(2 * np.pi / (num_chambers * 2) + 2 * np.pi * i / num_chambers + np.radians(yaw_angle))])
+        return [np.array([np.cos(2 * np.pi / (num_chambers * 2) + 2 * np.pi * i / num_chambers),
+                      np.sin(2 * np.pi / (num_chambers * 2) + 2 * np.pi * i / num_chambers)])
             for i in range(num_chambers)]
 
     def calculate_direction_vector(self, unit_vectors, vacuum_pressures):

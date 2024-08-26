@@ -798,6 +798,7 @@ class adaptMotionHelp(object):
 
         return T_array_cup
 
+    # weight compensation
     def get_T_array_cup(self, T_array, F_array, quat):
         Tx = T_array[0]
         Ty = T_array[1]
@@ -934,74 +935,6 @@ class adaptMotionHelp(object):
         closestCoef = np.amin(rayCoefficients[rayCoefficients>0])
         intersecPoint = positionVec + closestCoef*rayVec
         return intersecPoint
-
-
-    def get_Tmat_path(self, T_array, count):
-        dw = self.dw
-        # dP_threshold = self.dP_threshold
-        # T_threshold = 0.1
-        T_threshold = 0.01
-
-        Tx, Ty = T_array
-
-        # always reset variables for rotation axis / pressure gradient
-        a = 0
-        b = 0
-        theta = 0
-
-        # # if above threshold
-        # if abs(Ty) > T_threshold:
-        #     a += Tx
-
-        # # if above threshold
-        # if abs(Tx) > T_threshold:
-        #     b += Ty
-
-        # # if either is above threshold, then increase dw
-        # if abs(Tx) > T_threshold or abs(Ty) > T_threshold:
-        #     theta = dw
-
-        a = 1
-        b = 1
-        # b = -np.cos(np.deg2rad(count*5.5))
-
-        # a = np.cos(5*count/180*np.pi)
-        # b = np.sin(5*count/180*np.pi)
-
-        theta = dw
-
-        # rotation axis definition from a and b
-        rot_axis = np.array([a,b,0])
-        norm = np.linalg.norm(rot_axis)
-
-        # if vector != 0, go to next pressure iteration
-        if norm == 0:
-            # skip to checking normal force and grasp condition
-            # continue
-            T = np.eye(4)
-            pass # it seems it should be pass rather than continue
-
-        else:     # if good, add 1 deg
-            rot_axis = rot_axis/norm
-
-            # publish the next target pose
-            # print("theta: ", theta)
-
-            omega_hat = hat(rot_axis)
-            Rw = scipy.linalg.expm(theta * omega_hat)
-
-            T = create_transform_matrix(Rw, [0,0,0])
-
-        # should check normal force is high enough, if not, adjust
-        # print('dP_WE: ', dP_WE)     # Px
-        # print('dP_SN: ', dP_SN)     # Py
-        # print('dP_NW_SE: ', dP_NW_SE)
-        # print('dP_SW_NE: ', dP_SW_NE)
-        # print("a: ", a)
-        # print("b: ", b)
-        
-        return T
-
 
 
 
