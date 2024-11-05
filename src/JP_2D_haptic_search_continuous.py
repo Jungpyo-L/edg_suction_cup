@@ -2,7 +2,7 @@
 
 # Authors: Jungpyo Lee
 # Create: Aug.18.2024
-# Last update: Aug.18.2024
+# Last update: Aug.26.2024
 # Description: This script is used to test 2D haptic search models while recording pressure and path.
 
 # imports
@@ -104,7 +104,7 @@ def main(args):
   rtde_help = rtde_help = rtdeHelp(125)
   rospy.sleep(0.5)
   file_help = fileSaveHelp()
-  search_help = hapticSearch2DHelp(d_lat = 5e-3, d_yaw=1, n_ch = args.ch) # d_lat is important for the haptic search (if it is too small, the controller will fail)
+  search_help = hapticSearch2DHelp(d_lat = 5e-3, d_yaw=1, n_ch = args.ch, p_reverse = args.reverse) # d_lat is important for the haptic search (if it is too small, the controller will fail)
 
   # Set the TCP offset and calibration matrix
   rospy.sleep(0.5)
@@ -147,6 +147,8 @@ def main(args):
   controller_str = args.controller
   P_vac = search_help.P_vac
   timeLimit = 15
+  if args.reverse:
+    timeLimit = 10
   args.timeLimit = timeLimit
   pathLimit = 50e-3
   
@@ -286,6 +288,7 @@ if __name__ == '__main__':
   parser.add_argument('--material', type=int, help='Moldmax: 0, Elastic50: 1, agilus30: 2', default= 0)
   parser.add_argument('--tilt', type=int, help='tilted angle of the suction cup', default= 0)
   parser.add_argument('--yaw', type=int, help='yaw angle of the suction cup', default= 0)
+  parser.add_argument('--reverse', type=bool, help='when we use reverse airflow', default= False)
 
   args = parser.parse_args()    
   

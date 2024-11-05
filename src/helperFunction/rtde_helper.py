@@ -150,6 +150,11 @@ class rtdeHelp(object):
         # acc = self.acc
         self.rtde_c.moveL(targetPose, speed, acc, asynchronous)
 
+    def goToPose_2Dhaptic(self, goalPose, speed = 0.3, acc = 0.3, asynchronous=False):
+        pose = self.getTransformedPose(goalPose)
+        targetPose = self.getTCPPose(pose)
+        self.rtde_c.moveL(targetPose, speed, acc, asynchronous)
+
     def goToPoseAdaptive(self, goalPose, speed = 0.0, acc = 0.0,  time = 0.05, lookahead_time = 0.2, gain = 100.0):         # normal force measurement
     # def goToPoseAdaptive(self, goalPose, speed = 0.02, acc = 0.02,  time = 0.05, lookahead_time = 0.05, gain = 200.0):
     # def goToPoseAdaptive(self, goalPose, speed = 0.0, acc = 0.0,  time = 0.05, lookahead_time = 0.2, gain = 200.0):

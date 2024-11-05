@@ -12,13 +12,14 @@ from icecream import ic
 
 
 class hapticSearch2DHelp(object):
-    def __init__(self,dP_threshold=10, dw=15, P_vac = -20000, d_lat = 1.5e-3, d_z= 1.5e-3, d_yaw = 0.3, n_ch = 4):   #original
+    def __init__(self,dP_threshold=10, dw=15, P_vac = -20000, d_lat = 1.5e-3, d_z= 1.5e-3, d_yaw = 0.3, n_ch = 4, p_reverse = False):
         # for first performance test dw=15, d_lat = 0.5e-2, d_z= 1.5e-3
         # original dw = 3, d_lat = 0.1e-2, d_z = 0.3e-3
         self.dP_threshold = dP_threshold
         self.dw = dw * np.pi / 180.0
         
         self.P_vac = P_vac
+        self.p_reverse = p_reverse
         self.d_lat = d_lat
         self.d_z_normal = d_z
         self.d_yaw = d_yaw
@@ -110,7 +111,8 @@ class hapticSearch2DHelp(object):
         else:
             th = 0
         # make the pressure array positive (vacuum pressure)
-        P_array = [-P for P in P_array]
+        if not self.p_reverse:
+            P_array = [-P for P in P_array]
         # check if the invididual vacuum pressure is above the threshold
         # if not, then set the pressure to zero
         P_array = [P if P > th else 0 for P in P_array]
