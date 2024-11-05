@@ -127,7 +127,7 @@ def main(args):
   P_help.stopSampling()
 
   # save data and clear the temporary folder
-  file_help.saveDataParams(args, appendTxt='jp_simple_pressure_reading_reverse_pressure')
+  file_help.saveDataParams(args, appendTxt='jp_simple_pressure_reading_swing_object_edge')
   file_help.clearTmpFolder()
 
   print("============ Python UR_Interface demo complete!")
