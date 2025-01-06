@@ -7,49 +7,67 @@ from scipy import signal
 import threading
 
 class P_CallbackHelp(object):
-    def __init__(self):        
+    def __init__(self):
         rospy.Subscriber("SensorPacket", SensorPacket, self.callback_P)
-        
+
         self.START_CMD = 2
         self.IDLE_CMD = 3
         self.RECORD_CMD = 10
         self.msg2Sensor = cmdPacket()
         self.P_vac = -10000.0
-        # self.P_vac = -20000.0
 
         self.sensorCMD_Pub = rospy.Publisher('cmdPacket', cmdPacket, queue_size=10)
-
-        # callback delay test
-        self.callback_Pub = rospy.Publisher('SensorCallback', SensorPacket, queue_size=10)
+        self.callback_Pub  = rospy.Publisher('SensorCallback', SensorPacket, queue_size=10)
         self.callback_Pressure = SensorPacket()
-        
-        ## For pressure feedback
-        self.Psensor_Num = 4
+
+        # Number of sensors is initially unknown; we'll set it in callback.
+        self.Psensor_Num = None
         self.BufferLen = 7
 
-        # self.PressureBuffer = [[0.0]*self.Psensor_Num]*self.BufferLen # JP: This may cause a problem
-        self.PressureBuffer = [[0.0] * self.Psensor_Num for _ in range(self.BufferLen)] # JP: This is the correct way to initialize a 2D list. This way, each inner list will be independent of each other.
-        self.P_idx = 0
-        self.startPresAvg = False
-        self.four_pressure = [0.0]*self.Psensor_Num
-        self.thisPres = 0
+        # Buffers to be initialized once we know Psensor_Num
+        self.PressureBuffer      = None
+        self.PressurePWMBuffer   = None
+        self.PressureOffsetBuffer= None
+        self.P_idx               = 0
+        self.PWM_idx             = 0
+        self.offset_idx          = 0
+
+        # Pressure stats
+        self.startPresAvg    = False
+        self.startPresPWMAvg = False
+        self.offsetMissing   = True
+        self.thisPres        = None
+        self.four_pressure   = None   # Will become an N-pressure vector
+        self.four_pressurePWM= None   # Will also become an N-pressure vector
+        self.PressureOffset  = None   # Will become an N-pressure vector
+        self.power           = 0.0
 
         # For FFT
-        self.samplingF= 166
-        self.FFTbuffer_size = int(self.samplingF/2)    # 166 is 1 second
-        self.PressurePWMBuffer = np.array([[0]*self.Psensor_Num]*self.FFTbuffer_size)
-        self.PressureOffsetBuffer = np.array([[0]*self.Psensor_Num]*51)
-        self.PWM_idx = 0
-        self.offset_idx = 0
-        self.startPresPWMAvg = False
-        self.offsetMissing = True
-        self.four_pressurePWM = np.array([0.0]*4)
-        self.power = 0
-        self.PressureOffset = np.array([0.0]*4)
+        self.samplingF       = 166
+        self.FFTbuffer_size  = int(self.samplingF / 2)  # 166 is ~1 second
+        self.lock            = threading.Lock()
 
-        # Initize a lock
-        self.lock = threading.Lock()
-    
+    def initialize_arrays(self, num_ch):
+        """
+        (Re-)Initialize arrays/buffers for a new or changed number of chambers.
+        """
+        self.Psensor_Num = num_ch
+        rospy.loginfo("Re-initializing arrays for %d chambers.", num_ch)
+
+        # Basic ring buffers
+        self.PressureBuffer = [[0.0]*self.Psensor_Num for _ in range(self.BufferLen)]
+        self.P_idx = 0
+        self.startPresAvg = False
+
+        # For FFT computations
+        self.PressurePWMBuffer    = np.zeros((self.FFTbuffer_size, self.Psensor_Num))
+        self.PressureOffsetBuffer = np.zeros((51, self.Psensor_Num))
+        self.four_pressurePWM     = np.zeros(self.Psensor_Num)
+        self.PressureOffset       = np.zeros(self.Psensor_Num)
+        self.thisPres             = np.zeros(self.Psensor_Num)
+        self.PWM_idx              = 0
+        self.startPresPWMAvg      = False
+
     def startSampling(self):
         self.msg2Sensor.cmdInput = self.START_CMD
         self.sensorCMD_Pub.publish(self.msg2Sensor)
@@ -59,102 +77,96 @@ class P_CallbackHelp(object):
         self.sensorCMD_Pub.publish(self.msg2Sensor)
 
     def setNowAsOffset(self):
+        if self.Psensor_Num is None:
+            rospy.logwarn("Cannot set offset because number of chambers unknown.")
+            return
+
         self.PressureOffset *= 0
         rospy.sleep(0.5)
-        # print("self.PressureBuffer: ", self.PressureBuffer)
         buffer_copy = np.copy(self.PressureBuffer)
+        # buffer_copy has shape (BufferLen, Psensor_Num)
         self.PressureOffset = np.mean(buffer_copy, axis=0)
-
-        # # JP: The below code for acquiring lock, just in case the code keep throwing error
-        # # Acquire the lock before modifying self.PressureBuffer
-        # with self.lock:
-        #     buffer_copy = np.copy(self.PressureBuffer)
-        #     self.PressureOffset = np.mean(buffer_copy, axis=0)
-        
+        rospy.loginfo("Pressure offset set to: %s", str(self.PressureOffset))
 
     def callback_P(self, data):
-        fs = self.samplingF
-        N = self.FFTbuffer_size
-        fPWM = 30
-        
-        # print("self.four_pressurePWM:", np.floor(self.four_pressurePWM))
-        # print("self.PressureOffset: ", self.PressureOffset)
-        # print("self.PressureOffsetBuffer: ", self.PressureOffsetBuffer)
+        """
+        Called for each incoming SensorPacket message.
+        data.ch:  number of chambers
+        data.data: pressure array
+        """
+        # 1. If we haven't initialized arrays yet or the # of sensors changed, re-init
+        if self.Psensor_Num is None or self.Psensor_Num != data.ch:
+            self.initialize_arrays(data.ch)
 
-        # fill in the pressure data ring buffer
-        self.thisPres = np.array(data.data)
+        # 2. We now have self.Psensor_Num = data.ch
+        fs    = self.samplingF
+        N     = self.FFTbuffer_size
+        fPWM  = 30  # Hz
 
+        # 3. Fill in the ring buffer
+        self.thisPres = np.array(data.data, dtype=float)
+        # Acquire the lock if there's any chance of concurrency
+        with self.lock:
+            self.PressureBuffer[self.P_idx] = self.thisPres - self.PressureOffset
+            self.P_idx += 1
+            if self.P_idx == len(self.PressureBuffer):
+                self.startPresAvg = True
+                self.P_idx = 0
 
-        self.PressureBuffer[self.P_idx] = self.thisPres - self.PressureOffset 
-        self.P_idx += 1
-
-        # # JP: The below code for acquiring lock, just in case the code keep throwing error
-        # # Acquire the lock before modifying self.PressureBuffer
-        # with self.lock:
-        #     self.PressureBuffer[self.P_idx] = self.thisPres - self.PressureOffset 
-        #     self.P_idx += 1
-
-        self.PressurePWMBuffer[self.PWM_idx] = self.thisPres - self.PressureOffset 
+        # 4. Fill in the PWM buffer for FFT computations
+        self.PressurePWMBuffer[self.PWM_idx] = self.thisPres - self.PressureOffset
         self.PWM_idx += 1
-
-        # if buffer is filled, then set average flag to true and reset idx
-        if self.P_idx == len(self.PressureBuffer):
-            # averagin flag is always true now, i.e. ring buffer
-            self.startPresAvg = True
-            self.P_idx = 0
-        
-        # if buffer is filled, then set average flag to true and reset idx
         if self.PWM_idx == len(self.PressurePWMBuffer):
-            # averagin flag is always true now, i.e. ring buffer
             self.startPresPWMAvg = True
             self.PWM_idx = 0
 
-        # if averaging flag is True
+        # 5. If averaging flag is True, compute average across ring buffer
         if self.startPresAvg:
-            averagePres_dummy = [0]*4
+            # We'll build up an array of dimension Psensor_Num
+            averagePres_dummy = np.zeros(self.Psensor_Num, dtype=float)
+            
+            # each row is one reading: (BufferLen x Psensor_Num)
+            # easiest with NumPy:
+            buffer_np = np.array(self.PressureBuffer)
+            averagePres_dummy = np.mean(buffer_np, axis=0)
 
-            # let each row contribute to its column average
-            for pressure in self.PressureBuffer:
-                first = averagePres_dummy
-                second = [x / len(self.PressureBuffer) for x in pressure]
-                final_list = [sum(value) for value in zip(first, second)]
-                averagePres_dummy = final_list
+            self.four_pressure = averagePres_dummy.tolist()
 
-            self.four_pressure = averagePres_dummy
-            # callback delay check
-            self.callback_Pressure.data = averagePres_dummy
+            # Publish callback
+            self.callback_Pressure.ch   = self.Psensor_Num
+            self.callback_Pressure.data = self.four_pressure
             self.callback_Pub.publish(self.callback_Pressure)
-        
-        # if averaging flag is True
-        if self.startPresPWMAvg:
-            averagePresPWM_dummy = [0.0]*4
 
-            # run stft to each pressure sensor
-            for i in range(4):
-                f, t, Zxx = signal.stft(self.PressurePWMBuffer[:,i], fs, nperseg=self.FFTbuffer_size)
-                delta_f = f[1]-f[0]
-                idx = int(fPWM/delta_f)
-                self.power = abs(Zxx[idx])
-                mean_power = np.mean(self.power)
+        # 6. If startPresPWMAvg is True, compute STFT for each sensor
+        if self.startPresPWMAvg:
+            averagePresPWM_dummy = np.zeros(self.Psensor_Num, dtype=float)
+
+            # run stft on each pressure sensor
+            for i in range(self.Psensor_Num):
+                f, t, Zxx = signal.stft(
+                    self.PressurePWMBuffer[:, i], 
+                    fs,
+                    nperseg=N
+                )
+                delta_f = f[1] - f[0]  # frequency resolution
+                idx = int(fPWM / delta_f) if delta_f != 0 else 0
+                # avoid out-of-bounds if idx > len(f)-1
+                idx = min(idx, len(f)-1)
+
+                power_spectrum = abs(Zxx[idx])
+                mean_power = np.mean(power_spectrum)
                 averagePresPWM_dummy[i] = mean_power
 
             self.four_pressurePWM = averagePresPWM_dummy
-        # print("freq: ", f[idx])
-        # print("P4PWM: ", [abs(Zxx[idx-1]) , abs(Zxx[idx]), abs(Zxx[idx+1])] )
-        # print("abs(Zxx): ", np.mean(abs(Zxx), axis=1))
 
-    def get_P_WENS(self):
-            # absolute pressures - P_atm for each sensor
-            P0, P1, P2, P3 = self.four_pressure    
+def main():
+    rospy.init_node("pressure_callback_node", anonymous=True)
+    p_helper = P_CallbackHelp()
 
-            # absolute cardinal direction pressures
-            PW = (P3 + P2)/2
-            PE = (P1 + P0)/2
-            PN = (P1 + P2)/2
-            PS = (P0 + P3)/2   
+    # Example usage: Start sampling
+    p_helper.startSampling()
 
-            return PW, PE, PN, PS
-            # P0pwm = four_pressurePWM[0]
-            # P1pwm = four_pressurePWM[1]
-            # P2pwm = four_pressurePWM[2]
-            # P3pwm = four_pressurePWM[3]
+    rospy.spin()
+
+if __name__ == "__main__":
+    main()

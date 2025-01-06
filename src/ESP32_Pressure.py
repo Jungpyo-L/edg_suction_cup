@@ -30,7 +30,7 @@ def callback(data):
     CMD_in = data.cmdInput
 
 
-def main():
+def main(args):
     global currState
     global CMD_in
 
@@ -40,7 +40,10 @@ def main():
     pub = rospy.Publisher('SensorPacket', SensorPacket, queue_size=10)
     rospy.Subscriber("cmdPacket",cmdPacket, callback)
     msg = SensorPacket()
-    msg.data = [0.0, 0.0, 0.0, 0.0] 
+    # depending on the number of channel (args.ch), the size of data will be different
+    msg.ch = args.ch
+    msg.data = [0.0]*args.ch
+    # msg.data = [0.0, 0.0, 0.0, 0.0] 
 
     # ser = serial.Serial("/dev/ttyACM0", baudrate=115200, timeout=1, write_timeout=1)
     ser = serial.Serial("/dev/ttyPressure", baudrate=115200, timeout=1, write_timeout=1)
@@ -59,18 +62,32 @@ def main():
                     # print("ser_bytes: ", ser_bytes)
                     split_data = ser_bytes.split(' ')
                     # print("sizeof_split_data: ", len(split_data))
-                    first_val = split_data[0]
-                    # print("first_vale: ", first_val)
-                    second_val = split_data[1]
-                    third_val = split_data[2]
-                    fourth_val = split_data[3]
-                    msg.data[0] = float(first_val)
-                    msg.data[1] = float(second_val)
-                    msg.data[2] = float(third_val)
-                    msg.data[3] = float(fourth_val)
-                    print(msg)
+                    # first_val = split_data[0]
+                    # # print("first_vale: ", first_val)
+                    # second_val = split_data[1]
+                    # third_val = split_data[2]
+                    # fourth_val = split_data[3]
+                    # msg.data[0] = float(first_val)
+                    # msg.data[1] = float(second_val)
+                    # msg.data[2] = float(third_val)
+                    # msg.data[3] = float(fourth_val)
+                    # print(msg)
+                    # msg.header.stamp = rospy.Time.now()
+                    # pub.publish(msg)
+                    
+                    # rewrite above code depending on the number of channel
+                    # Ensure we have enough split elements to match the desired number of chambers
+                    if len(split_data) < args.ch:
+                        rospy.logwarn("Received fewer data points than expected. Received %d, expected %d", 
+                                    len(split_data), args.ch)
+                        return  # Or handle it however is appropriate for your application
+
+                    # Assign values dynamically
+                    for i in range(args.ch):
+                        msg.data[i] = float(split_data[i])
                     msg.header.stamp = rospy.Time.now()
                     pub.publish(msg)
+                    print(msg)
 
                 # ser.write("i" + "\r\n")
                 ser.write(struct.pack('<B', ord("i")))
@@ -87,7 +104,12 @@ def main():
 if __name__ == '__main__':
     try:
         print("Started!")
-        main()
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--ch', type=int, help='number of channel', default= 4)
+
+        args = parser.parse_args()    
+        main(args)
 
     except rospy.ROSInterruptException: 
         print("oops")

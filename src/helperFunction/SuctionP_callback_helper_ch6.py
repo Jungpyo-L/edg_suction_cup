@@ -124,19 +124,3 @@ class P_CallbackHelp(object):
         # print("freq: ", f[idx])
         # print("P4PWM: ", [abs(Zxx[idx-1]) , abs(Zxx[idx]), abs(Zxx[idx+1])] )
         # print("abs(Zxx): ", np.mean(abs(Zxx), axis=1))
-
-    def get_P_WENS(self):
-            # absolute pressures - P_atm for each sensor
-            P0, P1, P2, P3 = self.four_pressure    
-
-            # absolute cardinal direction pressures
-            PW = (P3 + P2)/2
-            PE = (P1 + P0)/2
-            PN = (P1 + P2)/2
-            PS = (P0 + P3)/2   
-
-            return PW, PE, PN, PS
-            # P0pwm = four_pressurePWM[0]
-            # P1pwm = four_pressurePWM[1]
-            # P2pwm = four_pressurePWM[2]
-            # P3pwm = four_pressurePWM[3]

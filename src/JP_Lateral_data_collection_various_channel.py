@@ -160,16 +160,7 @@ def main(args):
     input("Press <Enter> to go normal to get engage point")
 
     if args.zHeight == True:
-      # with open(datadir + '/engage_z.p', 'rb') as handle:
-      #   engage_z = pickle.load(handle) -1e-3
-      #   if args.ch == 6:
-      #     engage_z = engage_z + 19e-3
-      #   elif args.newCup == True:
-      #     engage_z = engage_z + 49e-3
-      if args.ch == 6:
-        engage_z = disengagePosition_init[2] - 4e-3 - 0.5e-3
-      else:
-        engage_z = disengagePosition_init[2] - 4e-3
+      engage_z = disengagePosition_init[2] - 4e-3
       
     else:
       initEndEffPoseStamped = rtde_help.getCurrentPose()
