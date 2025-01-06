@@ -76,7 +76,7 @@ roslaunch suction_cup ur_control.launch
 roslaunch suction_cup ur_experiment.launch ch:=4
 ```
 ```bash
-rosrun suction_cup ESP32_Pressure.py
+rosrun suction_cup ESP32_Pressure.py --ch 4
 ```
 ```bash
 rosrun suction_cup ESP32_PWM.py
