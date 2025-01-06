@@ -94,6 +94,11 @@ rostopic pub -1 /cmdPacket suction_cup/cmdPacket "header:
 cmdInput: 2"
 ```
 
+For pwm,
+```bash
+rostopic pub -1 /pwm std_msgs/Int8 "data: 100"
+```
+
 ### Simple robot control (`simple_robot_control.py`)
 The objective of this module is to send commands to the robot so that it moves as intended. This is achieved using the `goToPose` function. 
 
