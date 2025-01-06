@@ -73,7 +73,7 @@ Before writing your own code, please run and understand how the following exampl
 roslaunch suction_cup ur_control.launch
 ```
 ```bash
-roslaunch suction_cup ur_experiment.launch
+roslaunch suction_cup ur_experiment.launch ch:=4
 ```
 ```bash
 rosrun suction_cup ESP32_Pressure.py
