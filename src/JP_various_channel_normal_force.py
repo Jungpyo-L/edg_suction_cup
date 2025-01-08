@@ -83,6 +83,8 @@ def main(args):
   # Set the TCP offset and calibration matrix
   rospy.sleep(0.5)
   rtde_help.setTCPoffset([0, 0, 0.150, 0, 0, 0])
+  if args.ch == 6 or args.ch == 5:
+    rtde_help.setTCPoffset([0, 0, 0.150 + 0.02, 0, 0, 0])
   rospy.sleep(0.2)
 
   if FT_SimulatorOn:
@@ -110,10 +112,18 @@ def main(args):
   
   # pose initialization
   xoffset = args.xoffset
-  disengagePosition_init =  [-0.625, .275, 0.018] # unit is in m
+  disengagePosition_init =  [0.625, -.275, 0.018] # unit is in m
   # if args.ch == 6:
   #   disengagePosition_init[2] += 0.02
-  setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
+  if args.ch == 3:
+    default_yaw = pi/2 - 60*pi/180
+  if args.ch == 4:
+    default_yaw = pi/2 - 45*pi/180
+  if args.ch == 5:
+    default_yaw = pi/2 - 90*pi/180
+  if args.ch == 6:
+    default_yaw = pi/2 - 60*pi/180
+  setOrientation = tf.transformations.quaternion_from_euler(default_yaw,pi,0,'szxy')
   disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
 
 
@@ -181,7 +191,7 @@ def main(args):
 
 
     print("Go to disengage point")
-    setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
+    setOrientation = tf.transformations.quaternion_from_euler(default_yaw,pi,0,'szxy') #static (s) rotating (r)
     disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
     rtde_help.goToPose(disEngagePose)
     # cartesian_help.goToPose(disEngagePose,wait=True)

@@ -12,10 +12,8 @@ from icecream import ic
 
 
 class adaptMotionHelp(object):
-    # def __init__(self,dP_threshold=10, dw=15, P_vac = -15000, d_lat = 5e-3, d_z= 0.3e-3): 
     def __init__(self,dP_threshold=20, dw=15, P_vac = -15000, d_lat = 5e-3, d_z= 1.5e-3):   #original
-        # for first performance test dw=15, d_lat = 0.5e-2, d_z= 1.5e-3
-        # original dw = 3, d_lat = 0.1e-2, d_z = 0.3e-3
+
         self.dP_threshold = dP_threshold
         self.dw = dw * np.pi / 180.0
         
@@ -28,7 +26,7 @@ class adaptMotionHelp(object):
         self.BM_step = 0
         self.BM_x = 0
         self.BM_y = 0
-
+        
 
     def get_ObjectPoseStamped_from_T(self,T):   #transformation
         thisPose = PoseStamped()

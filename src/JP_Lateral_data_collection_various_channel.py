@@ -124,22 +124,25 @@ def main(args):
   # disengagePosition_init =  [-0.711, .107, 0.020] # seb
   
   if args.corner == 180:
-    disengagePosition_init =  [-0.612, .275, 0.0157] # unit is in m
+    disengagePosition_init =  [0.6104, -.275, 0.0175] # unit is in m
   elif args.corner == 270:
-    disengagePosition_init =  [-0.630, .275, 0.0157] # 270 degree
+    disengagePosition_init =  [0.628, -.2265, 0.0175] # 270 degree
   elif args.corner == 90:
-    disengagePosition_init =  [-0.620, .274, 0.0157] # 90 degree
+    disengagePosition_init =  [0.6185, -.1765, 0.0175] # 90 degree
 
-  if args.material == 0:
-    disengagePosition_init[2] += 0.001
   args.disengagePosition_init = disengagePosition_init
 
+  if args.ch == 3:
+    default_yaw = pi/2 - 60*pi/180
+  if args.ch == 4:
+    default_yaw = pi/2 - 45*pi/180
+  if args.ch == 5:
+    default_yaw = pi/2 - 90*pi/180
+    disengagePosition_init[2] += 0.02
   if args.ch == 6:
-    # disengagePosition_init[2] += 0.02
-    pass
-  elif args.newCup == True:
-    disengagePosition_init[2] += 0.05
-  setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
+    default_yaw = pi/2 - 60*pi/180
+    disengagePosition_init[2] += 0.02
+  setOrientation = tf.transformations.quaternion_from_euler(pi/2,pi,0,'szxy')
   disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
 
 
@@ -213,10 +216,16 @@ def main(args):
 
     input("Press <Enter> to start to data collection")
     startAngleFlag = True
-    xoffsets = np.arange(xoffset, 5, 1)
-    # for j in range(xoffset, 16):
-    for j in xoffsets:
+    # if args.corner == 180:
+    #   xoffsets = np.arange(xoffset, 5, 1)
+    # elif args.corner == 270:
+    #   xoffsets = np.arange(xoffset, 5, 1)
+    # elif args.corner == 90:
+    #   xoffsets = np.arange(xoffset, 5, 1)
 
+    xoffsets = np.arange(xoffset, 5, 1)
+
+    for j in xoffsets:
       print("Move to the upated disengage point")
       # add offset to the disengage position
       args.xoffset = j
@@ -241,7 +250,7 @@ def main(args):
         startAngleFlag = False
         
         # add yaw angle to the disengage position
-        targetOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2+pi/36*i,'sxyz') #static (s) rotating (r)
+        targetOrientation = tf.transformations.quaternion_from_euler(default_yaw - 5*pi/180*i,pi,0,'szxy') #static (s) rotating (r)
         targetPose = rtde_help.getPoseObj(disengagePosition, targetOrientation)
         targetPose_init = targetPose
         rtde_help.goToPose(targetPose)
@@ -256,7 +265,7 @@ def main(args):
         P_help.setNowAsOffset()
 
         # Go to engage Pose
-        targetOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2+pi/36*i,'sxyz') #static (s) rotating (r)
+        targetOrientation = tf.transformations.quaternion_from_euler(default_yaw - 5*pi/180*i,pi,0,'szxy') #static (s) rotating (r)
         targetPose = rtde_help.getPoseObj(engagePosition, targetOrientation)
         rtde_help.goToPose(targetPose)
         targetPWM_Pub.publish(DUTYCYCLE_100) 
@@ -272,19 +281,13 @@ def main(args):
         args.normalForceActual = F_normal
         args.pressure_avg = P_init
         P_vac = P_help.P_vac
-        if args.ch == 3:
-          P_init[3] = P_init[2] # for the case of channel 3 suction cup
-        # P_init[1] = P_init[0] # for the case of channel 2 suction cup
-        # P_init[3] = P_init[2] # for the case of channel 2 suction cup
-        # if all(np.array(P_init)<P_vac) and i == 0 and j != 7:
+
         if all(np.array(P_init)<P_vac) and i == 0:
           print("Suction Engage Succeed from initial touch")
           SuctionFlag = True
         else:
           SuctionFlag = False
-        # if args.ch == 6:
-        #   if j<7:
-        #     SuctionFlag = True
+
         print("Stop to record data")
         syncPub.publish(SYNC_STOP)
         rospy.sleep(0.1)
@@ -310,14 +313,14 @@ def main(args):
       # in order to go back to the initial orientation
       if SuctionFlag == False:
         for i in range(floor(args.angle/90)):
-          targetOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2-pi/2*(i+1),'sxyz') #static (s) rotating (r)
+          targetOrientation = tf.transformations.quaternion_from_euler(default_yaw + pi/2*(i+1),pi,0,'szxy') #static (s) rotating (r)
           targetPose = rtde_help.getPoseObj(disengagePosition, targetOrientation)
           rtde_help.goToPose(targetPose)
           rospy.sleep(0.1)      
     
 
     print("Go to disengage point")
-    setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
+    setOrientation = tf.transformations.quaternion_from_euler(pi/2,pi,0,'szxy') #static (s) rotating (r)
     disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
     rtde_help.goToPose(disEngagePose)
     # cartesian_help.goToPose(disEngagePose,wait=True)
@@ -353,7 +356,7 @@ if __name__ == '__main__':
   parser.add_argument('--startAngle', type=int, help='angles of exploration', default= 0)
   parser.add_argument('--primitives', type=str, help='types of primitives (edge, corner, etc.)', default= "edge")
   parser.add_argument('--normalForce', type=float, help='normal force', default= 1.5)
-  parser.add_argument('--zHeight', type=bool, help='use presset height mode? (rather than normal force)', default= False)
+  parser.add_argument('--zHeight', type=bool, help='use presset height mode? (rather than normal force)', default= True)
   parser.add_argument('--ch', type=int, help='number of channel', default= 4)
   parser.add_argument('--newCup', type=bool, help='whether we use new suction cup (ver2) or not', default= False)
   parser.add_argument('--corner', type=int, help='corner angle of the object', default= 180)

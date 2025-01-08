@@ -2,7 +2,7 @@
     <!-- 1. Add an arg for number of chambers, with a default of 4 -->
     <arg name="ch" default="4" />
 
-    <!-- 2. Launch your other nodes as before -->
+    <!-- 2. Launch nodes -->
     <node pkg="suction_cup" type="robotStatePublisher.py"
           name="robotStatePublisher" output="screen" />
 

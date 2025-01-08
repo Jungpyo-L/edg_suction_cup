@@ -35,9 +35,6 @@ class rtdeHelp(object):
         self.rtde_c = rtde_control.RTDEControlInterface("10.0.0.1", rtde_frequency)
         self.rtde_r = rtde_receive.RTDEReceiveInterface("10.0.0.1", rtde_frequency)
 
-        # rtde_r = RTDEReceive(robot_ip, rtde_frequency, [], True, False, rt_receive_priority)
-        # rtde_c = RTDEControl(robot_ip, rtde_frequency, flags, ur_cap_port, rt_control_priority)
-
         self.checkDistThres = 1e-3
         self.checkQuatThres = 10e-3
         self.transformation = create_transform_matrix(np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]]), [0, 0, 0])
@@ -58,19 +55,11 @@ class rtdeHelp(object):
         ns += suffix
         return ns
 
-    def quaternion_multiply(self, q1, q2):
-        w1, x1, y1, z1 = q1
-        w2, x2, y2, z2 = q2
-        return (w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
-                w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
-                w1 * y2 + y1 * w2 + z1 * x2 - x1 * z2,
-                w1 * z2 + z1 * w2 + x1 * y2 - y1 * x2)
-
-
     def getPoseObj(self, goalPosition, setOrientation):
         Pose = PoseStamped()  
         
         Pose.header.frame_id = "base_link"
+        Pose.header.stamp = rospy.Time.now()
         Pose.pose.orientation.x = setOrientation[0]
         Pose.pose.orientation.y = setOrientation[1]
         Pose.pose.orientation.z = setOrientation[2]
@@ -81,38 +70,23 @@ class rtdeHelp(object):
         Pose.pose.position.z = goalPosition[2]
         
         return Pose
-
-    def setCalibrationMatrix(self):
-        g1 = adpt_help.get_Tmat_from_Pose(self.getCurrentTCPPose())
-        g2 = adpt_help.get_Tmat_from_Pose(self.getCurrentTCPPose())
-        # gt = np.matmul(np.linalg.inv(g1), g2)
-        gt = np.matmul(g1, np.linalg.inv(g2))
-        print("Transformation matrix between pose and TCPpose")
-        print(gt)
-        self.transformation = gt
+    
+    def quaternion_multiply(self, q1, q2):
+        w1, x1, y1, z1 = q1
+        w2, x2, y2, z2 = q2
+        return (w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+                w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+                w1 * y2 + y1 * w2 + z1 * x2 - x1 * z2,
+                w1 * z2 + z1 * w2 + x1 * y2 - y1 * x2)
     
     def getRotVector(self, goalPose):
         qx = goalPose.pose.orientation.x
         qy = goalPose.pose.orientation.y
         qz = goalPose.pose.orientation.z
         qw = goalPose.pose.orientation.w
-        # q = [0, 0, 0, 1] # calculate during the calibration
-        # print("goalPose.pose.orientation (converted): ", goalPose.pose.orientation)
-        # print("q: ", q)
-        # r = R.from_quat(self.quaternion_multiply([qx, qy, qz, qw], q))
         r = R.from_quat([qx, qy, qz, qw])
         Rx, Ry, Rz = r.as_rotvec()
         return Rx, Ry, Rz
-    
-    def getTransformedPose(self, goalPose):
-        T_mat = np.matmul(np.linalg.inv(self.transformation), adpt_help.get_Tmat_from_Pose(goalPose))
-        pose = adpt_help.get_ObjectPoseStamped_from_T(T_mat)
-        return pose
-    
-    def getTransformedPoseInv(self, goalPose):
-        T_mat = np.matmul(self.transformation, adpt_help.get_Tmat_from_Pose(goalPose))
-        pose = adpt_help.get_ObjectPoseStamped_from_T(T_mat)
-        return pose
 
     def getTCPPose(self, pose):
         x = pose.pose.position.x
@@ -139,76 +113,32 @@ class rtdeHelp(object):
     def goToPositionOrientation(self, goalPosition, setOrientation, asynchronous = False):
         self.goToPose(self.getPoseObj(goalPosition, setOrientation))
 
-    # def goToPose(self, goalPose, speed = 2.5, acc = 1.7, asynchronous=False):
-    def goToPose(self, goalPose, speed = 0.1, acc = 0.1, asynchronous=False):     # original? need for edge following   
-    # def goToPose(self, goalPose, speed = 0.3, acc = 0.2, asynchronous=False):    
-    # def goToPose(self, goalPose, speed = 0.3, acc = 1.7, asynchronous=False):        # seb experimenting       
-        pose = self.getTransformedPose(goalPose)
-        targetPose = self.getTCPPose(pose)
-        # print(targetPose)
-        # speed = self.speed
-        # acc = self.acc
+    def goToPose(self, goalPose, speed = 0.1, acc = 0.1, asynchronous=False):     # original? need for edge following       
+        targetPose = self.getTCPPose(goalPose)
         self.rtde_c.moveL(targetPose, speed, acc, asynchronous)
 
     def goToPose_2Dhaptic(self, goalPose, speed = 0.3, acc = 0.3, asynchronous=False):
-        pose = self.getTransformedPose(goalPose)
-        targetPose = self.getTCPPose(pose)
+        targetPose = self.getTCPPose(goalPose)
         self.rtde_c.moveL(targetPose, speed, acc, asynchronous)
 
-    def goToPoseAdaptive(self, goalPose, speed = 0.0, acc = 0.0,  time = 0.05, lookahead_time = 0.2, gain = 100.0):         # normal force measurement
-    # def goToPoseAdaptive(self, goalPose, speed = 0.02, acc = 0.02,  time = 0.05, lookahead_time = 0.05, gain = 200.0):
-    # def goToPoseAdaptive(self, goalPose, speed = 0.0, acc = 0.0,  time = 0.05, lookahead_time = 0.2, gain = 200.0):
-        # lookahead_time range [0.03 0.2]
-        # grain range [100 2000]
+    def goToPoseAdaptive(self, goalPose, speed = 0.0, acc = 0.0,  time = 0.01, lookahead_time = 0.2, gain = 100.0):
         t_start = self.rtde_c.initPeriod()
-        pose = self.getTransformedPose(goalPose)
-        targetPose = self.getTCPPose(pose)
-        currentPose = self.getTCPPose(self.getCurrentTCPPose())
-        # currentPose = self.getTCPPose(self.rtde_r.getActualTCPPose())
-        # print("targetPose-currentPose", np.array(targetPose)-np.array(currentPose))
-        pose_diff_norm = np.linalg.norm(np.array(targetPose[0:3])-np.array(currentPose[0:3]))
-        # if pose_diff_norm  > 0.001:
-        #     print("norm of pose difference: ", pose_diff_norm)
-
+        targetPose = self.getTCPPose(goalPose)
         self.rtde_c.servoL(targetPose, speed, acc, time, lookahead_time, gain)
-        # rospy.sleep(0.01)
         self.rtde_c.waitPeriod(t_start)
     
-    def goToPoseAdaptive_2Dhaptic(self, goalPose, speed = 0.0, acc = 0.0,  time = 0.05, lookahead_time = 0.2, gain = 100.0):
-        # lookahead_time range [0.03 0.2]
-        # grain range [100 2000]
+    def goToPoseAdaptive_2Dhaptic(self, goalPose, speed = 0.0, acc = 0.0,  time = 0.01, lookahead_time = 0.2, gain = 100.0):
         t_start = self.rtde_c.initPeriod()
-        pose = self.getTransformedPose(goalPose)
-        targetPose = self.getTCPPose(pose)
+        targetPose = self.getTCPPose(goalPose)
         self.rtde_c.servoL(targetPose, speed, acc, time, lookahead_time, gain)
         self.rtde_c.waitPeriod(t_start)
 
-
-    def checkGoalPoseReached(self, goalPose, checkDistThres=np.nan, checkQuatThres = np.nan):
-        if np.isnan(checkDistThres):
-            checkDistThres=self.checkDistThres
-        if np.isnan(checkQuatThres):
-            checkQuatThres = self.checkQuatThres
-        (trans1,rot) = self.tfListener.lookupTransform('/base_link', '/tool0', rospy.Time(0))          
-        goalQuat = np.array([goalPose.pose.orientation.x,goalPose.pose.orientation.y, goalPose.pose.orientation.z, goalPose.pose.orientation.w])
-        rot_array = np.array(rot)
-        quatDiff = np.min([np.max(np.abs(goalQuat - rot_array)), np.max(np.abs(goalQuat + rot_array))])
-        distDiff = np.linalg.norm(np.array([goalPose.pose.position.x,goalPose.pose.position.y, goalPose.pose.position.z])- np.array(trans1)) 
-        # print(quatDiff, distDiff)
-        print("quatdiff: %.4f" % quatDiff)
-        print("distDiff: %.4f" % distDiff)
-        return distDiff < checkDistThres and quatDiff < checkQuatThres
-
-        
     def readCurrPositionQuat(self):
         (trans1,rot) = self.tfListener.lookupTransform('/base_link', '/tool0', rospy.Time(0))         
         return (trans1, rot) #trans1= position x,y,z, // quaternion: x,y,z,w
 
     def stopAtCurrPose(self,asynchronous = True):
         currPosition, orientation = self.readCurrPositionQuat()
-
-        # always false
-        # wait = False
         self.goToPositionOrientation(currPosition, orientation, asynchronous=asynchronous)
     
     def stopAtCurrPoseAdaptive(self):
@@ -222,20 +152,8 @@ class rtdeHelp(object):
     
     # Get current pose from TCP pose
     def getCurrentPose(self):
-        return self.getTransformedPoseInv(self.getCurrentTCPPose())
-
-    def getCurrentPoseTCPaxis(self):
-        return self.getTransformedPose(self.getCurrentPose())
-
-    def getCurrentTCPPose(self):
         TCPPose = self.rtde_r.getActualTCPPose()
         Position = [TCPPose[0], TCPPose[1], TCPPose[2]]
-        r = R.from_rotvec(np.array([TCPPose[3], TCPPose[4], TCPPose[5]]))
-        return self.getPoseObj(Position, r.as_quat())
-    
-    def getCurrentTCPPose1(self):
-        TCPPose = self.rtde_r.getActualTCPPose()
-        Position = [-TCPPose[0], -TCPPose[1], TCPPose[2]]
         r = R.from_rotvec(np.array([TCPPose[3], TCPPose[4], TCPPose[5]]))
         return self.getPoseObj(Position, r.as_quat())
 

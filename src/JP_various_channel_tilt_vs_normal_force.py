@@ -80,12 +80,12 @@ def main(args):
   rtde_help = rtde_help = rtdeHelp(125)
   rospy.sleep(0.5)
   file_help = fileSaveHelp()
-  adpt_help = adaptMotionHelp(dw = 0.5, d_lat = 0.5e-3, d_z = 0.05e-3)
+  adpt_help = adaptMotionHelp(dw = 0.5, d_lat = 0.5e-3, d_z = 0.5e-3)
 
   # Set the TCP offset and calibration matrix
   rospy.sleep(0.5)
   rtde_help.setTCPoffset([0, 0, 0.150, 0, 0, 0])
-  if args.ch == 6:
+  if args.ch == 6 or args.ch == 5:
     rtde_help.setTCPoffset([0, 0, 0.150 + 0.02, 0, 0, 0])
   rospy.sleep(0.2)
   # rtde_help.setCalibrationMatrix()
@@ -115,10 +115,16 @@ def main(args):
   datadir = file_help.ResultSavingDirectory
   
   # pose initialization
-  disengagePosition_init =  [-0.623, .275, 0.025] # unit is in m
+  disengagePosition_init =  [0.625, -.275, 0.024] # unit is in m
+  if args.ch == 3:
+    default_yaw = pi/2 - 60*pi/180
+  if args.ch == 4:
+    default_yaw = pi/2 - 45*pi/180
+  if args.ch == 5:
+    default_yaw = pi/2 - 90*pi/180
   if args.ch == 6:
-    disengagePosition_init =  [-0.63, .275, 0.025 + 0.02] # unit is in m
-  setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
+    default_yaw = pi/2 - 60*pi/180
+  setOrientation = tf.transformations.quaternion_from_euler(default_yaw,pi,0,'szxy')
   disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
   targetPWM_Pub.publish(DUTYCYCLE_0)
 
@@ -129,7 +135,7 @@ def main(args):
     rtde_help.goToPose(disEngagePose)
     rospy.sleep(0.1)
 
-    
+    input("Press <Enter> to start the main loop")
     # change yaw angle
     for yaw in range(0, 360//args.ch, 360//args.ch//3):
     # for yaw in range(0, 90, 30):
@@ -141,9 +147,9 @@ def main(args):
       for tilt in range(0, 31, 5):
         args.tilt = tilt
         print("tilt: ", tilt)
-        setOrientation = tf.transformations.quaternion_from_euler(pi+args.tilt*pi/180,0,pi/2,'sxyz') #static (s) rotating (r)
+        setOrientation = tf.transformations.quaternion_from_euler(default_yaw,pi,-args.tilt*pi/180 ,'szxy') #static (s) rotating (r)
         if args.yaw != 0:
-          setOrientation = tf.transformations.quaternion_from_euler(-pi/2 - pi/180 * args.yaw, pi, args.tilt*pi/180,'szxy') #static (s) rotating (r)
+          setOrientation = tf.transformations.quaternion_from_euler(default_yaw - pi/180*args.yaw, pi, -args.tilt*pi/180,'szxy') #static (s) rotating (r)
 
         disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
         rtde_help.goToPose(disEngagePose)
@@ -178,7 +184,7 @@ def main(args):
             if F_normal > -args.normalForce:
               T_move = adpt_help.get_Tmat_TranlateInZ(direction = 1)
               targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPose)
-              rtde_help.goToPoseAdaptive(targetPose, time = 0.1)
+              rtde_help.goToPoseAdaptive(targetPose, time = 0.01, lookahead_time=0.2, gain=100.0)
               F_normal = FT_help.averageFz_noOffset
               args.normalForceActual = F_normal
               rospy.sleep(0.1)
@@ -200,8 +206,7 @@ def main(args):
           P_vac = P_help.P_vac
 
           # check if suction engage is successful
-          # if all(np.array(P_init)[0:args.ch]<P_vac):
-          if P_init[0]<P_vac and P_init[2]<P_vac: # Ch2
+          if all(np.array(P_init)<P_vac):
             print("Suction Engage Succeed!!")
             args.SuctionFlag = True
             syncPub.publish(SYNC_STOP)
@@ -233,7 +238,7 @@ def main(args):
 
 
       print("Go to disengage point")
-      setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
+      setOrientation = tf.transformations.quaternion_from_euler(default_yaw,pi,0,'szxy')
       disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
       rtde_help.goToPose(disEngagePose)
       # cartesian_help.goToPose(disEngagePose,wait=True)
