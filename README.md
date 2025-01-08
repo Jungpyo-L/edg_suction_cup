@@ -73,10 +73,10 @@ Before writing your own code, please run and understand how the following exampl
 roslaunch suction_cup ur_control.launch
 ```
 ```bash
-roslaunch suction_cup ur_experiment.launch
+roslaunch suction_cup ur_experiment.launch ch:=4
 ```
 ```bash
-rosrun suction_cup ESP32_Pressure.py
+rosrun suction_cup ESP32_Pressure.py --ch 4
 ```
 ```bash
 rosrun suction_cup ESP32_PWM.py
@@ -92,6 +92,11 @@ rostopic pub -1 /cmdPacket suction_cup/cmdPacket "header:
     nsecs: 0
   frame_id: ''
 cmdInput: 2"
+```
+
+For pwm,
+```bash
+rostopic pub -1 /pwm std_msgs/Int8 "data: 100"
 ```
 
 ### Simple robot control (`simple_robot_control.py`)
