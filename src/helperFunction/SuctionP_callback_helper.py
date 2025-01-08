@@ -85,14 +85,22 @@ class P_CallbackHelp(object):
         self.sensorCMD_Pub.publish(self.msg2Sensor)
 
     def setNowAsOffset(self):
+        """
+        Safely copy PressureBuffer and compute offset.
+        Prevents the 'RuntimeError: Inconsistent object...' error by acquiring self.lock.
+        """
         if self.Psensor_Num is None:
             rospy.logwarn("Cannot set offset because number of chambers is unknown.")
             return
 
         self.PressureOffset *= 0
         rospy.sleep(0.5)
-        buffer_copy = np.copy(self.PressureBuffer)
-        # buffer_copy has shape (BufferLen, Psensor_Num)
+
+        # IMPORTANT: Acquire the lock before copying self.PressureBuffer
+        with self.lock:
+            buffer_copy = np.copy(self.PressureBuffer)
+
+        # buffer_copy now has shape (BufferLen, Psensor_Num)
         self.PressureOffset = np.mean(buffer_copy, axis=0)
         rospy.loginfo("Pressure offset set to: %s", str(self.PressureOffset))
 

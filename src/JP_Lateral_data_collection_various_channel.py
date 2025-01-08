@@ -124,11 +124,11 @@ def main(args):
   # disengagePosition_init =  [-0.711, .107, 0.020] # seb
   
   if args.corner == 180:
-    disengagePosition_init =  [0.6104, -.275, 0.0175] # unit is in m
+    disengagePosition_init =  [0.6115, -.275, 0.0178] # unit is in m
   elif args.corner == 270:
-    disengagePosition_init =  [0.628, -.2265, 0.0175] # 270 degree
+    disengagePosition_init =  [0.629, -.2265, 0.0175] # 270 degree
   elif args.corner == 90:
-    disengagePosition_init =  [0.6185, -.1765, 0.0175] # 90 degree
+    disengagePosition_init =  [0.619, -.1765, 0.0175] # 90 degree
 
   args.disengagePosition_init = disengagePosition_init
 
