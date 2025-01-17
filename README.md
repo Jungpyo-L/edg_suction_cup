@@ -224,6 +224,96 @@ By default, it is use pull (vacuum) haptic search, but if you want to test push 
 rosrun suction_cup simple_2D_vacuum_haptic_search.py --reverse True
 ```
 
+# Fixing USB Connection Name in Linux
+
+When working with USB devices on Linux, the assigned names (e.g., `/dev/ttyUSB0`, `/dev/ttyACM0`) may change after reboots or reconnections. This guide explains how to create a consistent, persistent name for your USB device using `udev` rules.
+
+---
+
+## Steps
+
+### 1. Check the Assigned Name for the USB Device
+Run the following command to list all USB devices and their assigned names:
+```bash
+ls -al /dev/serial/by-id
+```
+This command shows symbolic links to USB devices, providing descriptive names based on the device's unique ID.
+Example output:
+```bash
+usb-FTDI_FT232R_USB_UART_ABC123-if00-port0 -> ../../ttyUSB0
+```
+Here, usb-FTDI_FT232R_USB_UART_ABC123-if00-port0 is a unique identifier for the device.
+
+### 2. Identify the Device's Vendor ID and Product ID
+Use the lsusb command to view details about connected USB devices:
+
+```bash
+lsusb
+```
+Look for the device in the output to find its Vendor ID and Product ID.
+Example output:
+```bash
+Bus 001 Device 005: ID 0403:6001 Future Technology Devices International, Ltd FT232 USB-Serial (UART) IC
+```
+In this example:
+Vendor ID: 0403
+Product ID: 6001
+
+### 3. Find the Device's Serial Number
+Run the following command to extract the serial number of the device:
+
+```bash
+udevadm info -a /dev/ttyUSB0 | grep '{serial}'
+```
+Replace /dev/ttyUSB0 with the name of your device.
+Example output:
+arduino
+ATTRS{serial}=="ABC123"
+Note down the serial number for use in the next step.
+
+
+### 4. Create or Edit a udev Rule
+Navigate to the directory where udev rules are stored:
+
+```bash
+cd /etc/udev/rules.d
+```
+Create or open a file named 99-tty.rules:
+
+```bash
+sudo nano 99-tty.rules
+```
+Add the following line to define a persistent name for your USB device. Replace the placeholder values with your device's actual idVendor, idProduct, and serial:
+
+```bash
+```
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", ATTRS{serial}=="ABC123", SYMLINK+="my_usb_device"
+SUBSYSTEM=="tty" ensures this rule applies to serial devices.
+SYMLINK+="my_usb_device" creates a symbolic link /dev/my_usb_device for consistent naming.
+Save the file and exit the editor.
+
+### 5. Apply the New udev Rules
+Reload and trigger the udev rules to apply changes without rebooting:
+
+```bash
+sudo udevadm trigger
+```
+This ensures the system recognizes the updated rule immediately.
+
+6. Reboot the PC
+For the changes to take full effect and ensure stability, reboot the system:
+
+```bash
+sudo reboot
+```
+
+7. Verify the Persistent Name
+After rebooting, check if the symbolic link for your device exists and points to the correct USB device:
+
+```bash
+ls -l /dev/my_usb_device
+```
+
 
 ## Author
 Please contact the author to ask any question and need any funcion
