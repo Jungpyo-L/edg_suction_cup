@@ -227,6 +227,7 @@ rosrun suction_cup simple_2D_vacuum_haptic_search.py --reverse True
 ## Fixing USB Connection Name in Linux
 
 When working with USB devices on Linux, the assigned names (e.g., `/dev/ttyUSB0`, `/dev/ttyACM0`) may change after reboots or reconnections. This guide explains how to create a consistent, persistent name for your USB device using `udev` rules.
+This project uses two microcontrollers: one for the pneumatic control and the other for reading pressure data. In order to use the same serial connection even with different end-effectors with various numbers of chambers, fixing the USB connection name is important. Here is the step for it.
 
 ---
 
@@ -288,7 +289,7 @@ Add the following line to define a persistent name for your USB device. Replace 
 `SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", ATTRS{serial}=="ABC123", SYMLINK+="my_usb_device"`
 
 `SUBSYSTEM=="tty"` ensures this rule applies to serial devices.
-`SYMLINK+="my_usb_device"` creates a symbolic link /dev/my_usb_device for consistent naming.
+`SYMLINK+="my_usb_device"` creates a symbolic link `/dev/my_usb_device` for consistent naming.
 Save the file and exit the editor.
 
 ### 5. Apply the New udev Rules
