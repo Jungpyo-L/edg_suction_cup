@@ -47,14 +47,9 @@ from helperFunction.FT_callback_helper import FT_CallbackHelp
 from helperFunction.fileSaveHelper import fileSaveHelp
 from helperFunction.rtde_helper import rtdeHelp
 from helperFunction.adaptiveMotion import adaptMotionHelp
-
+from helperFunction.SuctionP_callback_helper import P_CallbackHelp
 
 def main(args):
-  if args.ch == 6:
-    from helperFunction.SuctionP_callback_helper_ch6 import P_CallbackHelp
-  else:
-    from helperFunction.SuctionP_callback_helper import P_CallbackHelp #check channel number
-
 
   deg2rad = np.pi / 180.0
   DUTYCYCLE_100 = 100
@@ -86,10 +81,9 @@ def main(args):
 
   # Set the TCP offset and calibration matrix
   rospy.sleep(0.5)
-  if args.ch == 6:
-    rtde_help.setTCPoffset([0, 0, 0.170, 0, 0, 0])
-  else:
-    rtde_help.setTCPoffset([0, 0, 0.150, 0, 0, 0])
+  rtde_help.setTCPoffset([0, 0, 0.150, 0, 0, 0])
+  if args.ch == 6 or args.ch == 5:
+    rtde_help.setTCPoffset([0, 0, 0.150 + 0.02 - 0.0008, 0, 0, 0])
   rospy.sleep(0.2)
   # rtde_help.setCalibrationMatrix()
   # rospy.sleep(0.2)
@@ -124,11 +118,12 @@ def main(args):
   # disengagePosition_init =  [-0.711, .107, 0.020] # seb
   
   if args.corner == 180:
-    disengagePosition_init =  [0.6115, -.275, 0.0178] # unit is in m
+    disengagePosition_init =  [0.6092, -.275, 0.0180] # unit is in m
   elif args.corner == 270:
-    disengagePosition_init =  [0.629, -.2265, 0.0175] # 270 degree
+    # disengagePosition_init =  [0.6280, -.1760, 0.0170] # 270 degree
+    disengagePosition_init =  [0.555, 0.100, 0.0170] # with tank, need to move back
   elif args.corner == 90:
-    disengagePosition_init =  [0.619, -.1765, 0.0175] # 90 degree
+    disengagePosition_init =  [0.6165, -.2258, 0.0170] # 90 degree
 
   args.disengagePosition_init = disengagePosition_init
 
@@ -138,10 +133,8 @@ def main(args):
     default_yaw = pi/2 - 45*pi/180
   if args.ch == 5:
     default_yaw = pi/2 - 90*pi/180
-    disengagePosition_init[2] += 0.02
   if args.ch == 6:
     default_yaw = pi/2 - 60*pi/180
-    disengagePosition_init[2] += 0.02
   setOrientation = tf.transformations.quaternion_from_euler(pi/2,pi,0,'szxy')
   disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
 
@@ -163,7 +156,7 @@ def main(args):
     input("Press <Enter> to go normal to get engage point")
 
     if args.zHeight == True:
-      engage_z = disengagePosition_init[2] - 4e-3
+      engage_z = disengagePosition_init[2] - args.deformation*1e-3
       
     else:
       initEndEffPoseStamped = rtde_help.getCurrentPose()
@@ -216,13 +209,6 @@ def main(args):
 
     input("Press <Enter> to start to data collection")
     startAngleFlag = True
-    # if args.corner == 180:
-    #   xoffsets = np.arange(xoffset, 5, 1)
-    # elif args.corner == 270:
-    #   xoffsets = np.arange(xoffset, 5, 1)
-    # elif args.corner == 90:
-    #   xoffsets = np.arange(xoffset, 5, 1)
-
     xoffsets = np.arange(xoffset, 5, 1)
 
     for j in xoffsets:
@@ -307,8 +293,8 @@ def main(args):
         file_help.clearTmpFolder()
         P_help.stopSampling()
         rospy.sleep(0.1) # default is 0.5
-        if SuctionFlag == True:
-          break
+        # if SuctionFlag == True:
+        #   break
 
       # in order to go back to the initial orientation
       if SuctionFlag == False:
@@ -356,6 +342,7 @@ if __name__ == '__main__':
   parser.add_argument('--startAngle', type=int, help='angles of exploration', default= 0)
   parser.add_argument('--primitives', type=str, help='types of primitives (edge, corner, etc.)', default= "edge")
   parser.add_argument('--normalForce', type=float, help='normal force', default= 1.5)
+  parser.add_argument('--deformation', type=float, help='normal deformation during data collection', default= 4.0)
   parser.add_argument('--zHeight', type=bool, help='use presset height mode? (rather than normal force)', default= True)
   parser.add_argument('--ch', type=int, help='number of channel', default= 4)
   parser.add_argument('--newCup', type=bool, help='whether we use new suction cup (ver2) or not', default= False)

@@ -59,22 +59,7 @@ def main(args):
                 rospy.sleep(0.01)
                 while not CMD_in == IDLE_CMD and not rospy.is_shutdown():
                     ser_bytes = ser.readline().decode("utf-8")
-                    # print("ser_bytes: ", ser_bytes)
-                    split_data = ser_bytes.split(' ')
-                    # print("sizeof_split_data: ", len(split_data))
-                    # first_val = split_data[0]
-                    # # print("first_vale: ", first_val)
-                    # second_val = split_data[1]
-                    # third_val = split_data[2]
-                    # fourth_val = split_data[3]
-                    # msg.data[0] = float(first_val)
-                    # msg.data[1] = float(second_val)
-                    # msg.data[2] = float(third_val)
-                    # msg.data[3] = float(fourth_val)
-                    # print(msg)
-                    # msg.header.stamp = rospy.Time.now()
-                    # pub.publish(msg)
-                    
+                    split_data = ser_bytes.split(' ')                    
                     # rewrite above code depending on the number of channel
                     # Ensure we have enough split elements to match the desired number of chambers
                     if len(split_data) < args.ch:

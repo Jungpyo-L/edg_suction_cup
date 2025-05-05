@@ -46,13 +46,10 @@ from helperFunction.FT_callback_helper import FT_CallbackHelp
 from helperFunction.fileSaveHelper import fileSaveHelp
 from helperFunction.rtde_helper import rtdeHelp
 from helperFunction.adaptiveMotion import adaptMotionHelp
+from helperFunction.SuctionP_callback_helper import P_CallbackHelp
 
 
 def main(args):
-  if args.ch == 6:
-    from helperFunction.SuctionP_callback_helper_ch6 import P_CallbackHelp
-  else:
-    from helperFunction.SuctionP_callback_helper import P_CallbackHelp
 
   deg2rad = np.pi / 180.0
   DUTYCYCLE_100 = 100
@@ -80,7 +77,7 @@ def main(args):
   rtde_help = rtde_help = rtdeHelp(125)
   rospy.sleep(0.5)
   file_help = fileSaveHelp()
-  adpt_help = adaptMotionHelp(dw = 0.5, d_lat = 0.5e-3, d_z = 0.5e-3)
+  adpt_help = adaptMotionHelp(dw = 0.5, d_lat = 0.5e-3, d_z = 0.05e-3)
 
   # Set the TCP offset and calibration matrix
   rospy.sleep(0.5)
@@ -137,8 +134,9 @@ def main(args):
 
     input("Press <Enter> to start the main loop")
     # change yaw angle
-    for yaw in range(0, 360//args.ch, 360//args.ch//3):
-    # for yaw in range(0, 90, 30):
+    # for yaw in range(0, 360//args.ch, 360//args.ch//3):
+    # for yaw in range (0, 360, 36):
+    for yaw in range(0, 180, 18):
       # if yaw == 0:
       #   continue
       args.yaw = yaw
@@ -153,9 +151,9 @@ def main(args):
 
         disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
         rtde_help.goToPose(disEngagePose)
-        rospy.sleep(0.3)
+        rospy.sleep(0.1)
         P_help.startSampling()      
-        rospy.sleep(0.5)
+        rospy.sleep(0.2)
         FT_help.setNowAsBias()
         P_help.setNowAsOffset()
         Fz_offset = FT_help.averageFz
@@ -166,7 +164,7 @@ def main(args):
           print("Start to go normal to get engage point")
           print("normal_thresh: ", normal_thresh)
           dataLoggerEnable(True)
-          rospy.sleep(0.3) # default is 0.5
+          rospy.sleep(0.2) # default is 0.5
 
           print("move along normal")
           targetPose = rtde_help.getCurrentPose()
@@ -187,7 +185,6 @@ def main(args):
               rtde_help.goToPoseAdaptive(targetPose, time = 0.01, lookahead_time=0.2, gain=100.0)
               F_normal = FT_help.averageFz_noOffset
               args.normalForceActual = F_normal
-              rospy.sleep(0.1)
 
             else:
               farFlag = False
@@ -196,7 +193,7 @@ def main(args):
               args.normalForceUsed= F_normal
               rospy.sleep(0.1)
               syncPub.publish(SYNC_STOP)
-              rospy.sleep(0.2)
+              rospy.sleep(0.1)
 
           # check if suction engage is successful
           targetPWM_Pub.publish(DUTYCYCLE_100)
@@ -213,19 +210,19 @@ def main(args):
           else:
             args.SuctionFlag = False
 
-          rospy.sleep(0.1)
+          # rospy.sleep(0.1)
           targetPWM_Pub.publish(DUTYCYCLE_0)
-          rospy.sleep(0.1)
+          # rospy.sleep(0.1)
                 
           syncPub.publish(SYNC_STOP)
           print("Go to disengage point")
           rtde_help.goToPose(disEngagePose)
-          rospy.sleep(0.5)
+          rospy.sleep(0.2)
 
           # stop data logging
-          rospy.sleep(0.2)
+          rospy.sleep(0.1)
           dataLoggerEnable(False)
-          rospy.sleep(0.2)
+          rospy.sleep(0.1)
           targetPWM_Pub.publish(DUTYCYCLE_0)
 
 
@@ -238,13 +235,17 @@ def main(args):
 
 
       print("Go to disengage point")
-      setOrientation = tf.transformations.quaternion_from_euler(default_yaw,pi,0,'szxy')
+      setOrientation = tf.transformations.quaternion_from_euler(default_yaw - pi/180*args.yaw,pi,0,'szxy')
       disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
       rtde_help.goToPose(disEngagePose)
       # cartesian_help.goToPose(disEngagePose,wait=True)
       rospy.sleep(0.3)
 
-
+    for i in range(floor(args.angle/90)):
+        targetOrientation = tf.transformations.quaternion_from_euler(default_yaw + pi/2*(i+1),pi,0,'szxy') #static (s) rotating (r)
+        targetPose = rtde_help.getPoseObj(disengagePosition_init, targetOrientation)
+        rtde_help.goToPose(targetPose)
+        rospy.sleep(0.1)      
 
     print("============ Stopping data logger ...")
     print("before dataLoggerEnable(False)")
@@ -252,7 +253,7 @@ def main(args):
     print("after dataLoggerEnable(False)")
     
 
-    # P_help.stopSampling()
+    P_help.stopSampling()
 
 
     print("============ Python UR_Interface demo complete!")

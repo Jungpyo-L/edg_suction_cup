@@ -61,8 +61,6 @@ def main(args):
   SYNC_START = 1
   SYNC_STOP = 2
 
- 
-
   F_normalThres = [args.normalForce, args.normalForce+0.5]
   args.normalForce_thres = F_normalThres
 
@@ -83,11 +81,9 @@ def main(args):
   adpt_help = adaptMotionHelp(dw = 0.5, d_lat = 2e-3, d_z = 0.1e-3)
 
   # Set the TCP offset and calibration matrix
-  rospy.sleep(0.5)
-  rtde_help.setTCPoffset([0, 0, 0.150, 0, 0, 0])
-  rospy.sleep(0.2)
-  rtde_help.setCalibrationMatrix()
-  rospy.sleep(0.2)
+  # rospy.sleep(0.5)
+  # rtde_help.setTCPoffset([0, 0, 0.150, 0, 0, 0])
+
 
   if FT_SimulatorOn:
     print("wait for FT simul")
@@ -114,22 +110,34 @@ def main(args):
   
   # pose initialization
   xoffset = args.xoffset
-  disengagePosition_init =  [-0.581, .206, 0.425] # unit is in m
-  setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
+  disengagePosition_init =  [0.581, -.206, 0.425] # unit is in m
+  default_yaw = pi/2
+  # if args.ch == 6:
+  #   disengagePosition_init[2] += 0.02
+  # if args.ch == 3:
+  #   default_yaw = pi/2 - 60*pi/180
+  # if args.ch == 4:
+  #   default_yaw = pi/2 - 45*pi/180
+  # if args.ch == 5:
+  #   default_yaw = pi/2 - 90*pi/180
+  # if args.ch == 6:
+  #   default_yaw = pi/2 - 60*pi/180
+  setOrientation = tf.transformations.quaternion_from_euler(default_yaw,pi,0,'szxy')
   disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
 
 
   P_vac = P_help.P_vac
-  timeLimit = 60 # sec
+  timeLimit = 20 # sec
 
 
   # try block so that we can have a keyboard exception
   try:
     # Go to disengage Pose
-    input("Press <Enter> to go disEngagePose")
-    rtde_help.goToPose(disEngagePose)
-    rospy.sleep(0.1)
+    # input("Press <Enter> to go disEngagePose")
+    # rtde_help.goToPose(disEngagePose)
+    # rospy.sleep(0.1)
 
+    input("Press <Enter> to start sampling")
     P_help.startSampling()      
     rospy.sleep(0.5)
     FT_help.setNowAsBias()
@@ -198,25 +206,19 @@ def main(args):
             rospy.sleep(0.1)
             break
 
-    input("press enter to go disengage pose")
+    # input("press enter to go disengage pose")
     rospy.sleep(0.1)
     targetPWM_Pub.publish(DUTYCYCLE_0)
-    setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2,'sxyz') #static (s) rotating (r)
-    disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
-    rtde_help.goToPose(disEngagePose)
-    # cartesian_help.goToPose(disEngagePose,wait=True)
-    rospy.sleep(0.3)
-
-
+    # rtde_help.goToPose(disEngagePose)
+    
 
     print("============ Stopping data logger ...")
     print("before dataLoggerEnable(False)")
     print(dataLoggerEnable(False)) # Stop Data Logging
-    print("after dataLoggerEnable(False)")
-    
-
     P_help.stopSampling()
-
+    rospy.sleep(0.3)
+    print("after dataLoggerEnable(False)")
+  
 
     print("============ Python UR_Interface demo complete!")
   

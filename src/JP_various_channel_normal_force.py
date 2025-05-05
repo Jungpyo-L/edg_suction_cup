@@ -84,7 +84,10 @@ def main(args):
   rospy.sleep(0.5)
   rtde_help.setTCPoffset([0, 0, 0.150, 0, 0, 0])
   if args.ch == 6 or args.ch == 5:
-    rtde_help.setTCPoffset([0, 0, 0.150 + 0.02, 0, 0, 0])
+    rtde_help.setTCPoffset([0, 0, 0.150 + 0.02 - 0.0007, 0, 0, 0])
+  if args.ch == 5:
+    rtde_help.setTCPoffset([0, 0, 0.150 + 0.02 - 0.001, 0, 0, 0])
+  # rtde_help.setTCPoffset([0, 0, 0.150, 0, 0, 0])
   rospy.sleep(0.2)
 
   if FT_SimulatorOn:
@@ -112,17 +115,18 @@ def main(args):
   
   # pose initialization
   xoffset = args.xoffset
-  disengagePosition_init =  [0.625, -.275, 0.018] # unit is in m
+  disengagePosition_init =  [0.625, -.275, 0.0178] # unit is in m
+  default_yaw = pi/2
   # if args.ch == 6:
   #   disengagePosition_init[2] += 0.02
-  if args.ch == 3:
-    default_yaw = pi/2 - 60*pi/180
-  if args.ch == 4:
-    default_yaw = pi/2 - 45*pi/180
-  if args.ch == 5:
-    default_yaw = pi/2 - 90*pi/180
-  if args.ch == 6:
-    default_yaw = pi/2 - 60*pi/180
+  # if args.ch == 3:
+  #   default_yaw = pi/2 - 60*pi/180
+  # if args.ch == 4:
+  #   default_yaw = pi/2 - 45*pi/180
+  # if args.ch == 5:
+  #   default_yaw = pi/2 - 90*pi/180
+  # if args.ch == 6:
+  #   default_yaw = pi/2 - 60*pi/180
   setOrientation = tf.transformations.quaternion_from_euler(default_yaw,pi,0,'szxy')
   disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
 

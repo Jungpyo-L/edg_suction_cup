@@ -426,14 +426,6 @@ class adaptMotionHelp(object):
         dx_lat = 0.0
         dy_lat = 0.0
 
-        # commented out by Jungpyo (220909) 
-        # # We should check if the x and y is aligned with the ATI frame
-        # if abs(dP_WE) > dP_threshold:       
-        #     dy_lat = -np.sign(dP_WE) * d_lat * weightVal
-            
-        # if abs(dP_SN) > dP_threshold:
-        #     dx_lat = np.sign(dP_SN) * d_lat * weightVal
-
         # added by Jungpyo (220909)
         r_p = np.zeros(2)
         r_p[0] = -dP_WE

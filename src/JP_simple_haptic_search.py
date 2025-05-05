@@ -46,13 +46,10 @@ from helperFunction.FT_callback_helper import FT_CallbackHelp
 from helperFunction.fileSaveHelper import fileSaveHelp
 from helperFunction.rtde_helper import rtdeHelp
 from helperFunction.adaptiveMotion import adaptMotionHelp
+from helperFunction.SuctionP_callback_helper import P_CallbackHelp
 
 
 def main(args):
-  if args.ch == 6:
-    from helperFunction.SuctionP_callback_helper_ch6 import P_CallbackHelp
-  else:
-    from helperFunction.SuctionP_callback_helper import P_CallbackHelp
 
   deg2rad = np.pi / 180.0
   DUTYCYCLE_100 = 100
