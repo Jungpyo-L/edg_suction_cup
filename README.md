@@ -224,6 +224,13 @@ By default, it is use pull (vacuum) haptic search, but if you want to test push 
 rosrun suction_cup simple_2D_vacuum_haptic_search.py --reverse True
 ```
 
+### Simple vacuum haptic search with only lateral positioning in the air (`Demo_Lateral_positioning_air.py`)
+
+```bash
+rosrun suction_cup Demo_Lateral_positioning_air.py
+```
+
+
 ## Fixing USB Connection Name in Linux
 
 When working with USB devices on Linux, the assigned names (e.g., `/dev/ttyUSB0`, `/dev/ttyACM0`) may change after reboots or reconnections. This guide explains how to create a consistent, persistent name for your USB device using `udev` rules.
