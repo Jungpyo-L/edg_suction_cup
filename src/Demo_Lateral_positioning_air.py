@@ -133,9 +133,9 @@ def main(args):
   # try block so that we can have a keyboard exception
   try:
     # Go to disengage Pose
-    # input("Press <Enter> to go disEngagePose")
-    # rtde_help.goToPose(disEngagePose)
-    # rospy.sleep(0.1)
+    input("Press <Enter> to go disEngagePose")
+    rtde_help.goToPose(disEngagePose)
+    rospy.sleep(0.1)
 
     input("Press <Enter> to start sampling")
     P_help.startSampling()      
