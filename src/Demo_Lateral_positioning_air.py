@@ -110,7 +110,7 @@ def main(args):
   
   # pose initialization
   xoffset = args.xoffset
-  disengagePosition_init =  [0.581, -.206, 0.425] # unit is in m
+  disengagePosition_init =  [0.581, -.206, 0.625] # unit is in m
   default_yaw = pi/2
   # if args.ch == 6:
   #   disengagePosition_init[2] += 0.02
@@ -137,7 +137,7 @@ def main(args):
     rtde_help.goToPose(disEngagePose)
     rospy.sleep(0.1)
 
-    input("Press <Enter> to start sampling")
+    input("Press <Enter> to start sampling and lateral search")
     P_help.startSampling()      
     rospy.sleep(0.5)
     FT_help.setNowAsBias()
@@ -146,7 +146,7 @@ def main(args):
 
 
 
-    input("Press <Enter> to start lateral search")
+    # input("Press <Enter> to start lateral search")
     targetPWM_Pub.publish(DUTYCYCLE_100)
     startTime = time.time()
     # rtde_help = rtdeHelp(125)
@@ -182,7 +182,7 @@ def main(args):
       T_array_cup = adpt_help.get_T_array_cup(T_array, F_array, quat)
 
       # calculate transformation matrices
-      T_align, T_later = adpt_help.get_Tmats_from_controller(P_array, T_array_cup, 'W1', 1)
+      T_align, T_later = adpt_help.get_Tmats_from_controller(P_array, T_array_cup, 'W5', 1)
       T_normalMove = adpt_help.get_Tmat_axialMove(F_normal, F_normalThres)
       T_move =  T_later @ T_align @ T_normalMove # lateral --> align --> normal
 

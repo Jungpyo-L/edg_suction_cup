@@ -104,6 +104,9 @@ def main(args):
   syncPub = rospy.Publisher('sync', Int8, queue_size=1)
   syncPub.publish(SYNC_RESET)
 
+  # Delay a moment to allow publishers to register with master
+  rospy.sleep(0.5)
+
 
   print("Wait for the data_logger to be enabled")
   rospy.wait_for_service('data_logging')
