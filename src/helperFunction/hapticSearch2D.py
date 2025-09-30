@@ -36,7 +36,7 @@ class hapticSearch2DHelp(object):
         # for momemtum controller
         self.velocity = np.array([0.0, 0.0]) # initial velocity
         self.d_lat_momentum = self.d_lat * 0.3 # initial step size for momentum controller
-        self.damping_factor = 0.9
+        self.damping_factor = 0.7
         self.max_velocity_x = self.d_lat * 1.5
         self.max_velocity_y = self.d_lat * 1.5
     
@@ -186,8 +186,8 @@ class hapticSearch2DHelp(object):
         return create_transform_matrix(Rw, [0,0,0])
         
     def get_Tmats_from_controller(self, P_array, yaw_angle, controller_str):
-        # ["normal","yaw","momentum","momentum_yaw"]
-        if controller_str == "normal":
+        # ["greedy","yaw","momentum","yaw_momentum"]
+        if controller_str == "greedy":
             T_align = np.eye(4)
             T_later = self.get_Tmat_lateralMove(P_array, yaw_angle)
             T_yaw = np.eye(4)
@@ -202,7 +202,7 @@ class hapticSearch2DHelp(object):
             T_later = self.get_Tmat_momentumMove(P_array, yaw_angle)
             T_yaw = np.eye(4)
 
-        elif controller_str == "momentum_yaw":
+        elif controller_str == "yaw_momentum":
             T_align = np.eye(4)
             T_later = self.get_Tmat_momentumMove(P_array, yaw_angle)
             T_yaw = self.get_Tmat_yawRotation()

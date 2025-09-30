@@ -5,6 +5,7 @@
 # Last update: Aug.26.2024
 # Description: This script is used to test 2D haptic search models while recording pressure and path.
 #              the difference between this script and JP_2D_haptic_search_continuous.py is that this script has a hopping motion
+#              This script will test heuristic controller and residual RL controller with hopping motion
 
 # imports
 try:
@@ -50,6 +51,9 @@ from helperFunction.FT_callback_helper import FT_CallbackHelp
 from helperFunction.fileSaveHelper import fileSaveHelp
 from helperFunction.rtde_helper import rtdeHelp
 from helperFunction.hapticSearch2D import hapticSearch2DHelp
+from helperFunction.SuctionP_callback_helper import P_CallbackHelp
+from helperFunction.RL_controller_helper import RLControllerHelper, create_rl_controller
+from helperFunction.utils import hat, create_transform_matrix
 
 
 def pressure_order_change(P_array, ch):
@@ -77,10 +81,7 @@ def get_disEngagePosition(primitives):
 
 
 def main(args):
-  if args.ch == 6:
-    from helperFunction.SuctionP_callback_helper_ch6 import P_CallbackHelp
-  else:
-    from helperFunction.SuctionP_callback_helper import P_CallbackHelp
+
 
   deg2rad = np.pi / 180.0
   DUTYCYCLE_100 = 100
@@ -110,7 +111,8 @@ def main(args):
   # Set the TCP offset and calibration matrix
   rospy.sleep(0.5)
   rtde_help.setTCPoffset([0, 0, 0.150, 0, 0, 0])
-  if args.ch == 6:
+  # for 5 and 6-chambered suction cups, the 3D printed fixtures are longer than 3 and 4-chambered suction cups.
+  if args.ch == 6 or args.ch == 5:
     rtde_help.setTCPoffset([0, 0, 0.150 + 0.02, 0, 0, 0])
   rospy.sleep(0.2)
 
@@ -139,17 +141,41 @@ def main(args):
   
   # Set the disengage pose
   disengagePosition = get_disEngagePosition(args.primitives)
-  setOrientation = tf.transformations.quaternion_from_euler(pi,0,pi/2 + pi/180*args.yaw,'sxyz') #static (s) rotating (r)
+  # set the default yaw angle in order to have the first chamber of each suction cups facing towards +x-axis when the suction cup is in the disengage pose
+  if args.ch == 3:
+    default_yaw = pi/2 - 60*pi/180
+  if args.ch == 4:
+    default_yaw = pi/2 - 45*pi/180
+  if args.ch == 5:
+    default_yaw = pi/2 - 90*pi/180
+  if args.ch == 6:
+    default_yaw = pi/2 - 60*pi/180
+  setOrientation = tf.transformations.quaternion_from_euler(default_yaw,pi,0,'szxy')
   disEngagePose = rtde_help.getPoseObj(disengagePosition, setOrientation)
-  
+
   
   # set initial parameters
   suctionSuccessFlag = False
   controller_str = args.controller
   P_vac = search_help.P_vac
-  timeLimit = 15
+  max_steps = 50 # maximum number of steps to take
+  args.max_steps = max_steps
+  timeLimit = 15 # maximum time to take (in seconds)
   args.timeLimit = timeLimit
-  pathLimit = 50e-3
+  pathLimit = 50e-3 # maximum path length to take (in mm)
+  args.pathLimit = pathLimit  
+  
+  # Initialize RL controller if specified
+  rl_controller = None
+  if controller_str.startswith('rl_'):
+    model_type = controller_str[3:]  # Remove 'rl_' prefix
+    try:
+      rl_controller = create_rl_controller(args.ch, model_type)
+      print(f"RL controller initialized with model: ch{args.ch}_{model_type}")
+    except Exception as e:
+      print(f"Failed to initialize RL controller: {e}")
+      print("Falling back to heuristic controller")
+      controller_str = "greedy"  # Fallback to greedy heuristic
   
 
   # try block so that we can have a keyboard exception
@@ -179,6 +205,11 @@ def main(args):
     iteration_count = 0 # to check the frequency of the loop
     pose_diff = 0
     
+    # Reset RL controller history if using RL
+    if rl_controller and rl_controller.is_model_loaded():
+      rl_controller.reset_history()
+      print("RL controller history reset")
+    
     # begin the haptic search
     while not suctionSuccessFlag:   # while no success in grasp, run controller until success or timeout
 
@@ -195,7 +226,45 @@ def main(args):
       yaw_angle = convert_yawAngle(search_help.get_yawRotation_from_T(T_curr))
 
       # calculate transformation matrices
-      T_later, T_yaw, T_align = search_help.get_Tmats_from_controller(P_array, yaw_angle, controller_str)
+      if rl_controller and rl_controller.is_model_loaded():
+        # Use RL controller
+        try:
+          lateral_vel, yaw_vel, debug_info = rl_controller.compute_action(P_array, yaw_angle, return_debug=True)
+          
+          # Convert RL output to transformation matrices
+          # RL controller outputs velocity, we need to convert to step size
+          step_lateral = search_help.d_lat
+          step_yaw = search_help.d_yaw
+          
+          # Create lateral movement transformation
+          dx_lat = lateral_vel[0] * step_lateral
+          dy_lat = lateral_vel[1] * step_lateral
+          T_later = search_help.get_Tmat_TranlateInBodyF([dx_lat, dy_lat, 0.0])
+          
+          # Create yaw rotation transformation
+          if abs(yaw_vel) > 1e-6:  # Only rotate if there's significant yaw velocity
+            d_yaw_rad = yaw_vel * step_yaw * np.pi / 180.0
+            rot_axis = np.array([0, 0, -1])
+            omega_hat = hat(rot_axis)
+            Rw = scipy.linalg.expm(d_yaw_rad * omega_hat)
+            T_yaw = create_transform_matrix(Rw, [0, 0, 0])
+          else:
+            T_yaw = np.eye(4)
+          
+          T_align = np.eye(4)
+          
+          # Print debug info occasionally
+          if iteration_count % 50 == 0:
+            print(f"RL Controller - Lateral: {lateral_vel}, Yaw: {yaw_vel:.3f}")
+            print(f"Debug: {debug_info}")
+            
+        except Exception as e:
+          print(f"RL controller failed: {e}, falling back to heuristic")
+          T_later, T_yaw, T_align = search_help.get_Tmats_from_controller(P_array, yaw_angle, "normal")
+      else:
+        # Use original heuristic controller
+        T_later, T_yaw, T_align = search_help.get_Tmats_from_controller(P_array, yaw_angle, controller_str)
+      
       T_move =  T_later @ T_yaw @ T_align  # lateral --> align --> normal
 
       # move to new pose adaptively with hopping motion
@@ -291,7 +360,7 @@ if __name__ == '__main__':
   parser = argparse.ArgumentParser()
   parser.add_argument('--primitives', type=str, help='types of primitives (nozzle, dumbbell, etc.)', default= "nozzle")
   parser.add_argument('--ch', type=int, help='number of channel', default= 4)
-  parser.add_argument('--controller', type=str, help='2D haptic contollers', default= "normal")
+  parser.add_argument('--controller', type=str, help='2D haptic contollers (normal, yaw, momentum, momentum_yaw, rl_hgreedy, rl_hmomentum, rl_hyaw, rl_hyaw_momentum)', default= "normal")
   parser.add_argument('--material', type=int, help='Moldmax: 0, Elastic50: 1, agilus30: 2', default= 0)
   parser.add_argument('--tilt', type=int, help='tilted angle of the suction cup', default= 0)
   parser.add_argument('--yaw', type=int, help='yaw angle of the suction cup', default= 0)
