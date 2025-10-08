@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 # Authors: Jungpyo Lee
+# Description: Simple lateral positioning controller test without force checking or vacuum success detection
 
 # imports
 try:
@@ -11,25 +12,12 @@ except:
   print('Couldn\'t import ROS.  I assume you\'re running this on your laptop')
   ros_enabled = False
 
-from calendar import month_abbr
 import os, sys
-import string
-from helperFunction.utils import rotation_from_quaternion, create_transform_matrix, quaternion_from_matrix, normalize, hat
-
-
-from datetime import datetime
-import pandas as pd
-import re
-import subprocess
 import numpy as np
-import copy
 import time
 import scipy
-import pickle
-import shutil
-from scipy.io import savemat
-from scipy.spatial.transform import Rotation as sciRot
-
+from scipy import signal
+from math import pi, cos, sin, floor
 
 from netft_utils.srv import *
 from suction_cup.srv import *
@@ -37,17 +25,15 @@ from std_msgs.msg import String
 from std_msgs.msg import Int8
 import geometry_msgs.msg
 import tf
-import cv2
-from scipy import signal
 
-from math import pi, cos, sin, floor
+from helperFunction.utils import rotation_from_quaternion, create_transform_matrix, quaternion_from_matrix, normalize, hat
 
 
 from helperFunction.SuctionP_callback_helper import P_CallbackHelp
-from helperFunction.FT_callback_helper import FT_CallbackHelp
 from helperFunction.fileSaveHelper import fileSaveHelp
 from helperFunction.rtde_helper import rtdeHelp
 from helperFunction.adaptiveMotion import adaptMotionHelp
+from helperFunction.hapticSearch2D import hapticSearch2DHelp
 
 
 def main(args):
@@ -61,8 +47,6 @@ def main(args):
   SYNC_START = 1
   SYNC_STOP = 2
 
-  F_normalThres = [args.normalForce, args.normalForce+0.5]
-  args.normalForce_thres = F_normalThres
 
   FT_SimulatorOn = False
   np.set_printoptions(precision=4)
@@ -71,14 +55,13 @@ def main(args):
   rospy.init_node('suction_cup')
 
   # Setup helper functions
-  FT_help = FT_CallbackHelp() # it deals with subscription.
-  rospy.sleep(0.5)
   P_help = P_CallbackHelp() # it deals with subscription.
   rospy.sleep(0.5)
-  rtde_help = rtde_help = rtdeHelp(125)
+  rtde_help = rtdeHelp(125)
   rospy.sleep(0.5)
   file_help = fileSaveHelp()
   adpt_help = adaptMotionHelp(dw = 0.5, d_lat = 2e-3, d_z = 0.1e-3)
+  search_help = hapticSearch2DHelp(d_lat = 5e-3, d_yaw=1.5, n_ch = args.ch, p_reverse = args.reverse) # d_lat is important for the haptic search (if it is too small, the controller will fail)
 
   # Set the TCP offset and calibration matrix
   # rospy.sleep(0.5)
@@ -109,25 +92,21 @@ def main(args):
   datadir = file_help.ResultSavingDirectory
   
   # pose initialization
-  xoffset = args.xoffset
   disengagePosition_init =  [0.581, -.206, 0.425] # unit is in m
-  default_yaw = pi/2
-  # if args.ch == 6:
-  #   disengagePosition_init[2] += 0.02
-  # if args.ch == 3:
-  #   default_yaw = pi/2 - 60*pi/180
-  # if args.ch == 4:
-  #   default_yaw = pi/2 - 45*pi/180
-  # if args.ch == 5:
-  #   default_yaw = pi/2 - 90*pi/180
-  # if args.ch == 6:
-  #   default_yaw = pi/2 - 60*pi/180
+  if args.ch == 3:
+    default_yaw = pi/2 - 60*pi/180
+  if args.ch == 4:
+    default_yaw = pi/2 - 45*pi/180
+  if args.ch == 5:
+    default_yaw = pi/2 - 90*pi/180
+  if args.ch == 6:
+    default_yaw = pi/2 - 60*pi/180
   setOrientation = tf.transformations.quaternion_from_euler(default_yaw,pi,0,'szxy')
   disEngagePose = rtde_help.getPoseObj(disengagePosition_init, setOrientation)
 
 
   P_vac = P_help.P_vac
-  timeLimit = 20 # sec
+  timeLimit = 10 # sec
 
 
   # try block so that we can have a keyboard exception
@@ -137,80 +116,46 @@ def main(args):
     rtde_help.goToPose(disEngagePose)
     rospy.sleep(0.1)
 
-    input("Press <Enter> to start sampling")
+    print("Start sampling")
     P_help.startSampling()      
     rospy.sleep(0.5)
-    FT_help.setNowAsBias()
     P_help.setNowAsOffset()
-    Fz_offset = FT_help.averageFz
 
 
 
     input("Press <Enter> to start lateral search")
     targetPWM_Pub.publish(DUTYCYCLE_100)
+    dataLoggerEnable(True)  # Start data logging
     startTime = time.time()
-    # rtde_help = rtdeHelp(125)
     
   
-    while True:
-            
+    while not time.time()-startTime > timeLimit:  # Run until timeout
 
-      # PFT arrays to calculate Transformation matrices
+      # Get pressure array for controller
       P_array = P_help.four_pressure
-      T_array = [FT_help.averageTx_noOffset, FT_help.averageTy_noOffset]
-      F_array = [FT_help.averageFx_noOffset, FT_help.averageFy_noOffset]
-      F_normal = FT_help.averageFz_noOffset
-
-      # check force limits
-      Fx = F_array[0]
-      Fy = F_array[1]
-      Fz = F_normal
-      F_total = np.sqrt(Fx**2 + Fy**2 + Fz**2)
-
-      if F_total > 10:
-        print("net force acting on cup is too high")
-
-        # stop at the last pose
-        rtde_help.stopAtCurrPose()
-        rospy.sleep(0.1)
-        sequentialFailures+=1
-        targetPWM_Pub.publish(DUTYCYCLE_0)
-        break
-
-      # get FT and quat for FT control
-      (trans, quat) = rtde_help.readCurrPositionQuat()
-      T_array_cup = adpt_help.get_T_array_cup(T_array, F_array, quat)
 
       # calculate transformation matrices
-      T_align, T_later = adpt_help.get_Tmats_from_controller(P_array, T_array_cup, 'W1', 1)
-      T_normalMove = adpt_help.get_Tmat_axialMove(F_normal, F_normalThres)
-      T_move =  T_later @ T_align @ T_normalMove # lateral --> align --> normal
+      T_later, T_yaw, T_align = search_help.get_Tmats_from_controller(P_array, "greedy")
+      T_move = T_later @ T_yaw @ T_align # lateral --> yaw --> align
 
       # move to new pose adaptively
       measuredCurrPose = rtde_help.getCurrentPose()
-      currPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, measuredCurrPose)
+      currPose = search_help.get_PoseStamped_from_T_initPose(T_move, measuredCurrPose)
       rtde_help.goToPoseAdaptive(currPose)
+      
+      # Small delay for control loop
+      rospy.sleep(0.05)
 
-
-      if time.time()-startTime >timeLimit:
-            args.timeOverFlag = time.time()-startTime >timeLimit
-
-            suctionSuccessFlag = False
-            print("Suction controller failed!")
-
-            # stop at the last pose
-            rtde_help.stopAtCurrPoseAdaptive()
-            targetPWM_Pub.publish(DUTYCYCLE_0)
-            
-            # keep X sec of data after alignment is complete
-            rospy.sleep(0.1)
-            break
-
-    # input("press enter to go disengage pose")
-    rospy.sleep(0.1)
-    targetPWM_Pub.publish(DUTYCYCLE_0)
-    # rtde_help.goToPose(disEngagePose)
+    # Controller testing completed after timeout
+    args.timeOverFlag = True
+    args.elapsedTime = time.time()-startTime
+    print(f"Controller testing completed after {args.elapsedTime:.2f} seconds")
     
+    # stop at the last pose
+    rtde_help.stopAtCurrPoseAdaptive()
+    targetPWM_Pub.publish(DUTYCYCLE_0)
+    # keep X sec of data after testing is complete
+    rospy.sleep(0.1)
 
     print("============ Stopping data logger ...")
     print("before dataLoggerEnable(False)")
@@ -218,6 +163,10 @@ def main(args):
     P_help.stopSampling()
     rospy.sleep(0.3)
     print("after dataLoggerEnable(False)")
+    
+    # Save data
+    file_help.saveDataParams(args, appendTxt='demo_lateral_positioning_controller_'+ str(getattr(args, 'controller', 'greedy')))
+    file_help.clearTmpFolder()
   
 
     print("============ Python UR_Interface demo complete!")
@@ -231,16 +180,9 @@ def main(args):
 if __name__ == '__main__':  
   import argparse
   parser = argparse.ArgumentParser()
-  parser.add_argument('--useStoredData', type=bool, help='take image or use existingFile', default=False)
-  parser.add_argument('--storedDataDirectory', type=str, help='location of target saved File', default="")
-  parser.add_argument('--startIdx', type=int, help='startIndex Of the pose List', default= 0)
-  parser.add_argument('--xoffset', type=int, help='x direction offset', default= 0)
-  parser.add_argument('--angle', type=int, help='angles of exploration', default= 360)
-  parser.add_argument('--startAngle', type=int, help='angles of exploration', default= 0)
-  parser.add_argument('--primitives', type=str, help='types of primitives (edge, corner, etc.)', default= "edge")
-  parser.add_argument('--normalForce', type=float, help='normal force', default= 1.5)
-  parser.add_argument('--zHeight', type=bool, help='use presset height mode? (rather than normal force)', default= False)
   parser.add_argument('--ch', type=int, help='number of channel', default= 4)
+  parser.add_argument('--reverse', type=bool, help='when we use reverse airflow', default= False)
+  parser.add_argument('--controller', type=str, help='2D haptic contollers (greedy, yaw, momentum, yaw_momentum, rl_hgreedy, rl_hmomentum, rl_hyaw, rl_hyaw_momentum)', default= "greedy")
 
 
   args = parser.parse_args()    

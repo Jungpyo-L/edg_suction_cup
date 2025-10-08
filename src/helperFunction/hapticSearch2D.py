@@ -8,11 +8,10 @@ from geometry_msgs.msg import PoseStamped
 from .utils import rotation_from_quaternion, create_transform_matrix, rotationFromQuaternion, normalize, hat, quaternionFromMatrix, quaternion_from_matrix
 from scipy.spatial.transform import Rotation as Rot
 import scipy
-from icecream import ic
 
 
 class hapticSearch2DHelp(object):
-    def __init__(self,dP_threshold=10, dw=15, P_vac = -20000, d_lat = 1.5e-3, d_z= 1.5e-3, d_yaw = 0.3, n_ch = 4, p_reverse = False):
+    def __init__(self,dP_threshold=10, dw=15, P_vac = -20000, d_lat = 1.5e-3, d_z= 1.5e-3, d_yaw = 1.5, damping_factor = 0.7, n_ch = 4, p_reverse = False):
         # for first performance test dw=15, d_lat = 0.5e-2, d_z= 1.5e-3
         # original dw = 3, d_lat = 0.1e-2, d_z = 0.3e-3
         self.dP_threshold = dP_threshold
@@ -36,7 +35,7 @@ class hapticSearch2DHelp(object):
         # for momemtum controller
         self.velocity = np.array([0.0, 0.0]) # initial velocity
         self.d_lat_momentum = self.d_lat * 0.3 # initial step size for momentum controller
-        self.damping_factor = 0.7
+        self.damping_factor = damping_factor
         self.max_velocity_x = self.d_lat * 1.5
         self.max_velocity_y = self.d_lat * 1.5
     
@@ -96,16 +95,26 @@ class hapticSearch2DHelp(object):
     
     # Sould set the first chamber of the suction cup is in direction of the positive x-axis
     # Keep in mind that yaw angle doen't need to be considered in this function because it is about body frame
-    def calculate_unit_vectors(self, num_chambers, yaw_angle):
-        return [np.array([np.cos(2 * np.pi / (num_chambers * 2) + 2 * np.pi * i / num_chambers),
-                      np.sin(2 * np.pi / (num_chambers * 2) + 2 * np.pi * i / num_chambers)])
+    def calculate_unit_vectors(self, num_chambers):
+        if num_chambers == 3:
+            first_chamber_angle = - np.pi / 3
+        elif num_chambers == 4:
+            first_chamber_angle = - np.pi / 4
+        elif num_chambers == 5:
+            first_chamber_angle = - np.pi / 2
+        elif num_chambers == 6:
+            first_chamber_angle = - np.pi / 3
+        else:
+            raise ValueError("Number of chambers is not supported")
+        return [np.array([np.cos(first_chamber_angle + 2 * np.pi * i / num_chambers),
+                    np.sin(first_chamber_angle + 2 * np.pi * i / num_chambers)])
             for i in range(num_chambers)]
 
     def calculate_direction_vector(self, unit_vectors, vacuum_pressures):
         direction_vector = np.sum([vp * uv for vp, uv in zip(vacuum_pressures, unit_vectors)], axis=0)
         return direction_vector / np.linalg.norm(direction_vector) if np.linalg.norm(direction_vector) > 0 else np.array([0, 0])
     
-    def get_lateral_direction_vector(self, P_array, yaw_angle, thereshold = True):
+    def get_lateral_direction_vector(self, P_array, thereshold = True):
         if thereshold:
             th = self.dP_threshold
         else:
@@ -116,11 +125,11 @@ class hapticSearch2DHelp(object):
         # check if the invididual vacuum pressure is above the threshold
         # if not, then set the pressure to zero
         P_array = [P if P > th else 0 for P in P_array]
-        unit_vectors = self.calculate_unit_vectors(self.n, yaw_angle)
+        unit_vectors = self.calculate_unit_vectors(self.n)
         return self.calculate_direction_vector(unit_vectors, P_array)
         
-    def get_Tmat_lateralMove(self, P_array, yaw_angle):
-        v = self.get_lateral_direction_vector(P_array, yaw_angle, True)
+    def get_Tmat_lateralMove(self, P_array):
+        v = self.get_lateral_direction_vector(P_array, True)
         v_step = v * self.d_lat
         # caution: the x and y axis are swapped in the coordinate system
         # positive x-axis is towards south
@@ -128,7 +137,7 @@ class hapticSearch2DHelp(object):
         # positive z-axis is towards down
         return self.get_Tmat_TranlateInBodyF([-v_step[1], -v_step[0], 0.0])
     
-    def get_Tmat_lateralMoveOld(self, P_array, yaw_angle, weightVal = 1.0):
+    def get_Tmat_lateralMoveOld(self, P_array, weightVal = 1.0):
         d_lat = self.d_lat
         dP_threshold = self.dP_threshold
 
@@ -164,12 +173,13 @@ class hapticSearch2DHelp(object):
         return T
     
     # get Tmat for momentum controller
-    def get_Tmat_momentumMove(self, P_array, yaw_angle):
-        v = self.get_lateral_direction_vector(P_array, yaw_angle, True)
+    def get_Tmat_momentumMove(self, P_array):
+        v = self.get_lateral_direction_vector(P_array, True)
         self.velocity = self.damping_factor * self.velocity + v * self.d_lat
         # limit the velocity
-        self.velocity[0] = np.clip(self.velocity[0], -self.max_velocity_x, self.max_velocity_x)
-        self.velocity[1] = np.clip(self.velocity[1], -self.max_velocity_y, self.max_velocity_y)
+        # self.velocity[0] = np.clip(self.velocity[0], -self.max_velocity_x, self.max_velocity_x)
+        # self.velocity[1] = np.clip(self.velocity[1], -self.max_velocity_y, self.max_velocity_y)
+
         # caution: the x and y axis are swapped in the coordinate system
         # positive x-axis is towards south
         # positive y-axis is towards west
@@ -185,26 +195,26 @@ class hapticSearch2DHelp(object):
         Rw = scipy.linalg.expm(d_yaw * omega_hat)   
         return create_transform_matrix(Rw, [0,0,0])
         
-    def get_Tmats_from_controller(self, P_array, yaw_angle, controller_str):
+    def get_Tmats_from_controller(self, P_array, controller_str):
         # ["greedy","yaw","momentum","yaw_momentum"]
         if controller_str == "greedy":
             T_align = np.eye(4)
-            T_later = self.get_Tmat_lateralMove(P_array, yaw_angle)
+            T_later = self.get_Tmat_lateralMove(P_array)
             T_yaw = np.eye(4)
         
         elif controller_str == "yaw":
             T_align = np.eye(4)
-            T_later = self.get_Tmat_lateralMove(P_array, yaw_angle)
+            T_later = self.get_Tmat_lateralMove(P_array)
             T_yaw = self.get_Tmat_yawRotation()
         
         elif controller_str == "momentum":
             T_align = np.eye(4)
-            T_later = self.get_Tmat_momentumMove(P_array, yaw_angle)
+            T_later = self.get_Tmat_momentumMove(P_array)
             T_yaw = np.eye(4)
 
         elif controller_str == "yaw_momentum":
             T_align = np.eye(4)
-            T_later = self.get_Tmat_momentumMove(P_array, yaw_angle)
+            T_later = self.get_Tmat_momentumMove(P_array)
             T_yaw = self.get_Tmat_yawRotation()
 
         return T_later, T_yaw, T_align
