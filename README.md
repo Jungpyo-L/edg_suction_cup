@@ -318,7 +318,7 @@ sudo reboot
 After rebooting, check if the symbolic link for your device exists and points to the correct USB device:
 
 ```bash
-ls -l /dev/my_usb_device
+ls -l /dev/
 ```
 
 
