@@ -2,7 +2,7 @@
 
 # Authors: Jungpyo Lee
 # Create: Aug.26.2024
-# Last update: Aug.26.2024
+# Last update: Oct.09.2025
 # Description: This script is used to test 2D haptic search models while recording pressure and path.
 #              the difference between this script and JP_2D_haptic_search_continuous.py is that this script has a hopping motion
 #              This script will test heuristic controller and residual RL controller with hopping motion
@@ -56,27 +56,22 @@ from helperFunction.RL_controller_helper import RLControllerHelper, create_rl_co
 from helperFunction.utils import hat, create_transform_matrix
 
 
-def pressure_order_change(P_array, ch):
-  if ch == 3:
-    P_array_new = [P_array[1], P_array[2], P_array[0]]
-  elif ch == 4:
-    P_array_new = [P_array[1], P_array[2], P_array[3], P_array[0]]
-  elif ch == 6:
-    P_array_new = [P_array[1], P_array[2], P_array[3], P_array[4], P_array[5], P_array[0]]
-  return P_array_new
-
 def convert_yawAngle(yaw_radian):
   yaw_angle = yaw_radian*180/pi
   yaw_angle = -yaw_angle - 90
   return yaw_angle
 
 def get_disEngagePosition(primitives):
-  if primitives == 'nozzle':
-    disEngagePosition =  [-0.632, .265, 0.0151 + 5e-3]
+  if primitives == 'trap':
+    disEngagePosition =  [0.443, -.038, 0.013]
   elif primitives == 'dumbbell':
-    disEngagePosition =  [-0.665, .305, 0.0151 + 5e-3]
-  elif primitives == 'test':
-    disEngagePosition =  [-0.642, .290, 0.0151 + 5e-3]
+    disEngagePosition =  [0.443, -.038, 0.013]
+  elif primitives == 'polygons':
+    disEngagePosition =  [0.443, -.038, 0.013]
+  else:
+    # Default fallback for unknown primitives
+    print(f"Warning: Unknown primitives '{primitives}', using trap position")
+    disEngagePosition =  [0.443, -.038, 0.013]
   return disEngagePosition
 
 
@@ -103,10 +98,10 @@ def main(args):
   rospy.sleep(0.5)
   P_help = P_CallbackHelp() # it deals with subscription.
   rospy.sleep(0.5)
-  rtde_help = rtde_help = rtdeHelp(125)
+  rtde_help = rtdeHelp(125)
   rospy.sleep(0.5)
   file_help = fileSaveHelp()
-  search_help = hapticSearch2DHelp(d_lat = 5e-3, d_yaw=1.5, n_ch = args.ch, p_reverse = args.reverse) # d_lat is important for the haptic search (if it is too small, the controller will fail)
+  search_help = hapticSearch2DHelp(d_lat = 0.5e-3, d_yaw=1.5, n_ch = args.ch, p_reverse = args.reverse) # d_lat is important for the haptic search (if it is too small, the controller will fail)
 
   # Set the TCP offset and calibration matrix
   rospy.sleep(0.5)
@@ -158,9 +153,9 @@ def main(args):
   suctionSuccessFlag = False
   controller_str = args.controller
   P_vac = search_help.P_vac
-  max_steps = 50 # maximum number of steps to take
+  max_steps = args.max_iterations # maximum number of steps to take
   args.max_steps = max_steps
-  timeLimit = 15 # maximum time to take (in seconds)
+  timeLimit = 15 # maximum time to take (in seconds) - kept for compatibility
   args.timeLimit = timeLimit
   pathLimit = 50e-3 # maximum path length to take (in mm)
   args.pathLimit = pathLimit  
@@ -182,7 +177,7 @@ def main(args):
   try:
     input("Press <Enter> to go to disengagepose")
     rtde_help.goToPose(disEngagePose)
-    
+
     print("Start the haptic search")
     targetPWM_Pub.publish(DUTYCYCLE_100)
     P_help.startSampling()      
@@ -190,9 +185,10 @@ def main(args):
     P_help.setNowAsOffset()
     dataLoggerEnable(True)
 
-    print("move down to go to engagepose")
+    input("Press <Enter> to go to engagepose")
+    # print("move down to go to engagepose")
     engagePosition = copy.deepcopy(disengagePosition)
-    engagePosition[2] = disengagePosition[2] - 7e-3 # if the engage position is too loose, the controller will fail (probably because of the horizontal flow)
+    engagePosition[2] = disengagePosition[2] - 5e-3 # if the engage position is too loose, the controller will fail (probably because of the horizontal flow)
     engagePose = rtde_help.getPoseObj(engagePosition, setOrientation)
     rtde_help.goToPose_2Dhaptic(engagePose)
 
@@ -216,9 +212,7 @@ def main(args):
       iteration_start_time = time.time()
       
       # P arrays to calculate Transformation matrices and change the order of pressure
-      P_array_old = P_help.four_pressure
-      P_array = pressure_order_change(P_array_old, args.ch)
-      
+      P_array = P_help.four_pressure
       
       # get the current yaw angle of the suction cup
       measuredCurrPose = rtde_help.getCurrentPose()
@@ -260,10 +254,10 @@ def main(args):
             
         except Exception as e:
           print(f"RL controller failed: {e}, falling back to heuristic")
-          T_later, T_yaw, T_align = search_help.get_Tmats_from_controller(P_array, yaw_angle, "normal")
+          T_later, T_yaw, T_align = search_help.get_Tmats_from_controller(P_array, "greedy")
       else:
         # Use original heuristic controller
-        T_later, T_yaw, T_align = search_help.get_Tmats_from_controller(P_array, yaw_angle, controller_str)
+        T_later, T_yaw, T_align = search_help.get_Tmats_from_controller(P_array, controller_str)
       
       T_move =  T_later @ T_yaw @ T_align  # lateral --> align --> normal
 
@@ -286,14 +280,14 @@ def main(args):
 
       #=================== check attempt break conditions =================== 
       # LOOP BREAK CONDITION 1
-      P_array_old = P_help.four_pressure
-      P_array = pressure_order_change(P_array_old, args.ch)
+      P_array = P_help.four_pressure
       reached_vacuum = all(np.array(P_array)<P_vac)
       if reached_vacuum:
         # vacuum seal formed, success!
         suctionSuccessFlag = True
         args.elapsedTime = time.time()-startTime
-        print("Suction engage succeeded with controller")
+        args.iteration_count = iteration_count
+        print(f"Suction engage succeeded with controller {controller_str} at iteration {iteration_count}")
         # stop at the last pose
         rtde_help.stopAtCurrPoseAdaptive()
         # keep X sec of data after alignment is complete
@@ -301,12 +295,12 @@ def main(args):
         break
       
       # LOOP BREAK CONDITION 2
-      # if timeout, or displacement/angle passed, failed
-      elif time.time()-startTime >timeLimit:
-        args.timeOverFlag = time.time()-startTime >timeLimit
+      # if max iterations reached, failed
+      elif iteration_count >= max_steps:
+        args.timeOverFlag = True
         args.elapsedTime = time.time()-startTime
         suctionSuccessFlag = False
-        print("Suction controller failed!")
+        print(f"Suction controller failed! Reached maximum iterations ({max_steps})")
 
         # stop at the last pose
         rtde_help.stopAtCurrPoseAdaptive()
@@ -320,12 +314,16 @@ def main(args):
       iteration_count += 1
       iteration_end_time = time.time()
 
+      # Print progress every 10 iterations
+      if iteration_count % 10 == 0:
+          print(f"Iteration {iteration_count}/{max_steps}")
+
        # Measure frequency every 100 iterations
       if iteration_count % 100 == 0:
           current_time = time.time()
           elapsed_time = current_time - startTime
           frequency = iteration_count / elapsed_time
-          # print(f"Current control frequency after {iteration_count} iterations: {frequency} Hz")
+          print(f"Current control frequency after {iteration_count} iterations: {frequency:.1f} Hz")
       
 
     args.suction = suctionSuccessFlag
@@ -339,7 +337,7 @@ def main(args):
     targetPWM_Pub.publish(DUTYCYCLE_0)
 
     # save data and clear the temporary folder
-    file_help.saveDataParams(args, appendTxt='jp_2D_HapticSearch_hopping_' + str(args.primitives)+'_controller_'+ str(args.controller) +'_material_' + str(args.material))
+    file_help.saveDataParams(args, appendTxt='jp_2D_HapticSearch_hopping_' + str(args.primitives)+'_controller_'+ str(args.controller))
     file_help.clearTmpFolder()
     
     # go to disengage pose
@@ -358,15 +356,12 @@ def main(args):
 if __name__ == '__main__':  
   import argparse
   parser = argparse.ArgumentParser()
-  parser.add_argument('--primitives', type=str, help='types of primitives (nozzle, dumbbell, etc.)', default= "nozzle")
+  parser.add_argument('--primitives', type=str, help='types of primitives (trap, dumbbell, polygons, etc.)', default= "trap")
   parser.add_argument('--ch', type=int, help='number of channel', default= 4)
-  parser.add_argument('--controller', type=str, help='2D haptic contollers (normal, yaw, momentum, momentum_yaw, rl_hgreedy, rl_hmomentum, rl_hyaw, rl_hyaw_momentum)', default= "normal")
-  parser.add_argument('--material', type=int, help='Moldmax: 0, Elastic50: 1, agilus30: 2', default= 0)
-  parser.add_argument('--tilt', type=int, help='tilted angle of the suction cup', default= 0)
-  parser.add_argument('--yaw', type=int, help='yaw angle of the suction cup', default= 0)
+  parser.add_argument('--controller', type=str, help='2D haptic contollers (greedy, yaw, momentum, yaw_momentum, rl_hgreedy, rl_hmomentum, rl_hyaw, rl_hyaw_momentum)', default= "yaw_momentum")
+  parser.add_argument('--max_iterations', type=int, help='maximum number of iterations (default: 100)', default= 100)
   parser.add_argument('--reverse', type=bool, help='when we use reverse airflow', default= False)
 
   args = parser.parse_args()    
   
   main(args)
-  # main(depth, rotAngleList[mode], translateZList[mode])

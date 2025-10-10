@@ -69,7 +69,7 @@ def main(args):
   rtde_help = rtdeHelp(125)
   rospy.sleep(0.5)
   file_help = fileSaveHelp()
-  search_help = hapticSearch2DHelp(d_lat = 5e-3, d_yaw=1.5, n_ch = args.ch, p_reverse = args.reverse) # d_lat is important for the haptic search (if it is too small, the controller will fail)
+  search_help = hapticSearch2DHelp(d_lat = 0.5e-3, d_yaw=1.5, n_ch = args.ch, p_reverse = args.reverse) # d_lat is important for the haptic search (if it is too small, the controller will fail)
 
   # Set the TCP offset and calibration matrix
   rospy.sleep(0.5)

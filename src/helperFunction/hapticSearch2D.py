@@ -11,7 +11,7 @@ import scipy
 
 
 class hapticSearch2DHelp(object):
-    def __init__(self,dP_threshold=10, dw=15, P_vac = -20000, d_lat = 1.5e-3, d_z= 1.5e-3, d_yaw = 1.5, damping_factor = 0.7, n_ch = 4, p_reverse = False):
+    def __init__(self,dP_threshold=10, dw=15, P_vac = -20000, d_lat = 0.5e-3, d_z= 1.5e-3, d_yaw = 1.5, damping_factor = 0.7, n_ch = 4, p_reverse = False):
         # for first performance test dw=15, d_lat = 0.5e-2, d_z= 1.5e-3
         # original dw = 3, d_lat = 0.1e-2, d_z = 0.3e-3
         self.dP_threshold = dP_threshold
@@ -196,8 +196,8 @@ class hapticSearch2DHelp(object):
         return create_transform_matrix(Rw, [0,0,0])
         
     def get_Tmats_from_controller(self, P_array, controller_str):
-        # ["greedy","yaw","momentum","yaw_momentum"]
-        if controller_str == "greedy":
+        # ["normal","greedy","yaw","momentum","yaw_momentum"]
+        if controller_str == "normal" or controller_str == "greedy":
             T_align = np.eye(4)
             T_later = self.get_Tmat_lateralMove(P_array)
             T_yaw = np.eye(4)
@@ -212,10 +212,17 @@ class hapticSearch2DHelp(object):
             T_later = self.get_Tmat_momentumMove(P_array)
             T_yaw = np.eye(4)
 
-        elif controller_str == "yaw_momentum":
+        elif controller_str == "yaw_momentum" or controller_str == "momentum_yaw":
             T_align = np.eye(4)
             T_later = self.get_Tmat_momentumMove(P_array)
             T_yaw = self.get_Tmat_yawRotation()
+        
+        else:
+            # Default fallback for unknown controller types
+            print(f"Warning: Unknown controller '{controller_str}', using greedy controller")
+            T_align = np.eye(4)
+            T_later = self.get_Tmat_lateralMove(P_array)
+            T_yaw = np.eye(4)
 
         return T_later, T_yaw, T_align
     
