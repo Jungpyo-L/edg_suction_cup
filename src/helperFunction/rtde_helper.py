@@ -60,14 +60,32 @@ class rtdeHelp(object):
         
         Pose.header.frame_id = "base_link"
         Pose.header.stamp = rospy.Time.now()
-        Pose.pose.orientation.x = setOrientation[0]
-        Pose.pose.orientation.y = setOrientation[1]
-        Pose.pose.orientation.z = setOrientation[2]
-        Pose.pose.orientation.w = setOrientation[3]
         
-        Pose.pose.position.x = goalPosition[0]
-        Pose.pose.position.y = goalPosition[1]
-        Pose.pose.position.z = goalPosition[2]
+        # Handle both Quaternion objects and array-like objects
+        if hasattr(setOrientation, 'x'):
+            # It's a Quaternion object
+            Pose.pose.orientation.x = setOrientation.x
+            Pose.pose.orientation.y = setOrientation.y
+            Pose.pose.orientation.z = setOrientation.z
+            Pose.pose.orientation.w = setOrientation.w
+        else:
+            # It's array-like (list, tuple, numpy array)
+            Pose.pose.orientation.x = setOrientation[0]
+            Pose.pose.orientation.y = setOrientation[1]
+            Pose.pose.orientation.z = setOrientation[2]
+            Pose.pose.orientation.w = setOrientation[3]
+        
+        # Handle both Point objects and array-like objects
+        if hasattr(goalPosition, 'x'):
+            # It's a Point object
+            Pose.pose.position.x = goalPosition.x
+            Pose.pose.position.y = goalPosition.y
+            Pose.pose.position.z = goalPosition.z
+        else:
+            # It's array-like (list, tuple, numpy array)
+            Pose.pose.position.x = goalPosition[0]
+            Pose.pose.position.y = goalPosition[1]
+            Pose.pose.position.z = goalPosition[2]
         
         return Pose
     

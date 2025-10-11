@@ -11,7 +11,7 @@ import scipy
 
 
 class hapticSearch2DHelp(object):
-    def __init__(self,dP_threshold=10, dw=15, P_vac = -20000, d_lat = 0.5e-3, d_z= 1.5e-3, d_yaw = 1.5, damping_factor = 0.7, n_ch = 4, p_reverse = False):
+    def __init__(self,dP_threshold=10, dw=15, P_vac = -18000, d_lat = 0.5e-3, d_z= 1.5e-3, d_yaw = 1.5, damping_factor = 0.7, n_ch = 4, p_reverse = False):
         # for first performance test dw=15, d_lat = 0.5e-2, d_z= 1.5e-3
         # original dw = 3, d_lat = 0.1e-2, d_z = 0.3e-3
         self.dP_threshold = dP_threshold

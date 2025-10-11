@@ -165,7 +165,7 @@ def run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub,
   # Calculate engage position: 5mm below the disengage position
   # This is the starting height for haptic search with contact to the object
   engagePosition = copy.deepcopy(disEngagePose.pose.position)
-  engagePosition[2] = engagePosition[2] - 5e-3  # Lower by 5mm (critical for proper seal formation)
+  engagePosition.z = engagePosition.z - 5e-3  # Lower by 5mm (critical for proper seal formation)
   engagePose = rtde_help.getPoseObj(engagePosition, disEngagePose.pose.orientation)
   rtde_help.goToPose_2Dhaptic(engagePose)
   
@@ -279,12 +279,12 @@ def run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub,
     # HOP UP: Lift 5mm to disengage from surface
     currPose.pose.position.z = currPose.pose.position.z + 5e-3
     rtde_help.goToPose_2Dhaptic(currPose)
-    rospy.sleep(0.05)  # Brief pause at top of hop
+    # rospy.sleep(0.02)  # Brief pause at top of hop
     
     # HOP DOWN: Return to contact, compensating for any Z-position error
     currPose.pose.position.z = currPose.pose.position.z - 5e-3 - pose_diff
     rtde_help.goToPose_2Dhaptic(currPose)
-    rospy.sleep(0.05)  # Brief pause at bottom of hop
+    rospy.sleep(args.hop_sleep)  # Brief pause at bottom of hop (configurable)
     
     # ===== UPDATE STATE =====
     # Measure actual position and update error compensation
@@ -355,7 +355,7 @@ def run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub,
 
 def run_single_experiment(args, rtde_help, search_help, P_help, targetPWM_Pub, 
                          dataLoggerEnable, file_help, disEngagePose, rl_controller, 
-                         experiment_num, random_yaw):
+                         experiment_num, random_yaw, tracking_yaw=None):
   """
   Run a single haptic search experiment with a specific random yaw angle.
   
@@ -399,8 +399,8 @@ def run_single_experiment(args, rtde_help, search_help, P_help, targetPWM_Pub,
   q = disEngagePose.pose.orientation
   current_euler = tf.transformations.euler_from_quaternion([q.x, q.y, q.z, q.w], 'szxy')
   
-  # Add random yaw to the existing yaw angle
-  new_yaw = current_euler[0] + random_yaw
+  # Add random yaw to the existing yaw angle (subtract to reverse direction)
+  new_yaw = current_euler[0] - random_yaw
   setOrientation = tf.transformations.quaternion_from_euler(new_yaw, current_euler[1], current_euler[2], 'szxy')
   
   # Create a new disEngagePose with the random yaw for this experiment
@@ -410,17 +410,21 @@ def run_single_experiment(args, rtde_help, search_help, P_help, targetPWM_Pub,
   disEngagePose_randomYaw.pose.orientation.z = setOrientation[2]
   disEngagePose_randomYaw.pose.orientation.w = setOrientation[3]
   
-  print(f"Experiment {experiment_num}: Random yaw = {random_yaw*180/np.pi:.1f} degrees")
+  # Use tracking_yaw for filename and results if provided (for sweep mode)
+  # Otherwise use random_yaw (for random mode)
+  yaw_for_tracking = tracking_yaw if tracking_yaw is not None else random_yaw
+  
+  print(f"Experiment {experiment_num}: Yaw = {yaw_for_tracking*180/np.pi:.1f} degrees")
   
   # Run the haptic search using the common function
   result = run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub, 
                                  dataLoggerEnable, file_help, disEngagePose_randomYaw, rl_controller, 
-                                 experiment_num, random_yaw)
+                                 experiment_num, yaw_for_tracking)
 
   # Save data for this experiment
   args.experiment_num = experiment_num
-  args.random_yaw = random_yaw
-  file_help.saveDataParams(args, appendTxt=f'jp_2D_HapticSearch_hopping_{args.primitives}_controller_{args.controller}_exp{experiment_num:02d}_yaw{random_yaw*180/np.pi:.1f}deg')
+  args.random_yaw = yaw_for_tracking
+  file_help.saveDataParams(args, appendTxt=f'jp_2D_hopping_ch_{args.ch}_{args.primitives}_controller_{args.controller}_exp{experiment_num:02d}_yaw{yaw_for_tracking*180/np.pi:.1f}deg')
   file_help.clearTmpFolder()
   
   # Return to disengage pose
@@ -431,7 +435,7 @@ def run_single_experiment(args, rtde_help, search_help, P_help, targetPWM_Pub,
     'success': result['success'],
     'iterations': result['iterations'],
     'elapsed_time': result['elapsed_time'],
-    'random_yaw': random_yaw,
+    'random_yaw': yaw_for_tracking,
     'final_yaw': result['final_yaw'],
     'path_length_2d': result['path_length_2d'],
     'path_length_3d': result['path_length_3d']
@@ -484,10 +488,10 @@ def run_repeated_experiments(args, rtde_help, search_help, P_help, targetPWM_Pub
   # ==================== SETUP EXPERIMENT PARAMETERS ====================
   if mode == 'sweep':
     # YAW SWEEP MODE: Systematically sweep through 360 degrees
-    yaw_step_deg = 5  # Step size in degrees
-    num_experiments = int(360 / yaw_step_deg)  # 72 experiments for 5-degree steps
-    yaw_angles = [i * yaw_step_deg * np.pi / 180.0 for i in range(num_experiments)]  # Convert to radians
-    mode_description = f"yaw sweep (0° to 355° in {yaw_step_deg}° steps)"
+    yaw_step_deg = args.yaw_step  # Step size in degrees (configurable)
+    num_experiments = int(360 / yaw_step_deg)  # Number of experiments based on step size
+    yaw_step_rad = yaw_step_deg * np.pi / 180.0  # Incremental step in radians
+    mode_description = f"yaw sweep (0° to {360-yaw_step_deg:.0f}° in {yaw_step_deg:.0f}° steps, {num_experiments} experiments)"
   else:
     # RANDOM YAW MODE: Random yaw angles for each experiment
     num_experiments = 10
@@ -495,6 +499,7 @@ def run_repeated_experiments(args, rtde_help, search_help, P_help, targetPWM_Pub
     mode_description = "random yaw angles"
   
   results = []
+  cumulative_yaw = 0.0  # Track cumulative yaw for sweep mode
   
   print(f"Starting {num_experiments} repeated experiments for {args.primitives}")
   print(f"Mode: {mode_description}")
@@ -502,8 +507,19 @@ def run_repeated_experiments(args, rtde_help, search_help, P_help, targetPWM_Pub
   
   # ==================== RUN EXPERIMENTS ====================
   for i in range(num_experiments):
-    yaw_angle = yaw_angles[i]
-    yaw_deg = yaw_angle * 180.0 / np.pi
+    if mode == 'sweep':
+      # For sweep mode: yaw is already in disEngagePose, so pass 0 (no additional yaw)
+      # cumulative_yaw tracks the total yaw for display purposes
+      yaw_angle = 0  # No additional yaw (already in disEngagePose)
+      yaw_increment = yaw_step_rad
+      display_yaw = cumulative_yaw  # For display only
+    else:
+      # For random mode, use the pre-generated random angles
+      yaw_angle = yaw_angles[i]
+      yaw_increment = 0  # No increment needed for random mode
+      display_yaw = yaw_angle
+    
+    yaw_deg = display_yaw * 180.0 / np.pi
     
     print(f"\n--- Experiment {i+1}/{num_experiments} (Yaw: {yaw_deg:.1f}°) ---")
     
@@ -511,15 +527,28 @@ def run_repeated_experiments(args, rtde_help, search_help, P_help, targetPWM_Pub
     result = run_single_experiment(
       args, rtde_help, search_help, P_help, targetPWM_Pub,
       dataLoggerEnable, file_help, disEngagePose, rl_controller,
-      i+1, yaw_angle
+      i+1, yaw_angle, tracking_yaw=display_yaw
     )
     
     results.append(result)
     
+    # Update disEngagePose with new yaw for next experiment (sweep mode only)
+    if mode == 'sweep' and i < num_experiments - 1:
+      cumulative_yaw += yaw_increment
+      # Apply incremental yaw to disEngagePose for next experiment
+      q = disEngagePose.pose.orientation
+      current_euler = tf.transformations.euler_from_quaternion([q.x, q.y, q.z, q.w], 'szxy')
+      new_yaw = current_euler[0] - yaw_increment  # Apply increment (subtract for correct direction)
+      setOrientation = tf.transformations.quaternion_from_euler(new_yaw, current_euler[1], current_euler[2], 'szxy')
+      disEngagePose.pose.orientation.x = setOrientation[0]
+      disEngagePose.pose.orientation.y = setOrientation[1]
+      disEngagePose.pose.orientation.z = setOrientation[2]
+      disEngagePose.pose.orientation.w = setOrientation[3]
+    
     # Brief pause between experiments
     if i < num_experiments - 1:
-      print("Waiting 2 seconds before next experiment...")
-      rospy.sleep(2)
+      print(f"Waiting {args.pause_time:.1f} seconds before next experiment...")
+      rospy.sleep(args.pause_time)
   
   # Print summary statistics
   print("\n" + "=" * 50)
@@ -719,7 +748,7 @@ def main(args):
                                      dataLoggerEnable, file_help, disEngagePose, rl_controller)
 
       # save data and clear the temporary folder
-      file_help.saveDataParams(args, appendTxt='jp_2D_HapticSearch_hopping_' + str(args.primitives)+'_controller_'+ str(args.controller))
+      file_help.saveDataParams(args, appendTxt='Jp_2D_HS_hopping_' + 'ch' + str(args.ch) + '_' + str(args.primitives)+'_controller_'+ str(args.controller))
       file_help.clearTmpFolder()
       
       # go to disengage pose
@@ -741,11 +770,17 @@ if __name__ == '__main__':
   parser.add_argument('--primitives', type=str, help='types of primitives (trap, dumbbell, polygons, etc.)', default= "trap")
   parser.add_argument('--ch', type=int, help='number of channel', default= 4)
   parser.add_argument('--controller', type=str, help='2D haptic contollers (greedy, yaw, momentum, yaw_momentum, rl_hgreedy, rl_hmomentum, rl_hyaw, rl_hyaw_momentum)', default= "yaw_momentum")
-  parser.add_argument('--max_iterations', type=int, help='maximum number of iterations (default: 100)', default= 100)
+  parser.add_argument('--max_iterations', type=int, help='maximum number of iterations (default: 50)', default= 50)
   parser.add_argument('--reverse', type=bool, help='when we use reverse airflow', default= False)
   parser.add_argument('--yaw_mode', type=str, choices=['sweep', 'random'], 
-                      help='yaw experiment mode: sweep (default, 0-360° in 5° steps) or random (10 random angles)', 
+                      help='yaw experiment mode: sweep (default, 0-360° in steps) or random (10 random angles)', 
                       default='sweep')
+  parser.add_argument('--yaw_step', type=float, help='yaw step size in degrees for sweep mode (default: 5°, try 10° or 15° for faster sweeps)', 
+                      default=10.0)
+  parser.add_argument('--pause_time', type=float, help='pause time between experiments in seconds (default: 0.5s, try 0.2s for faster)', 
+                      default=0.5)
+  parser.add_argument('--hop_sleep', type=float, help='sleep time after hopping down in seconds (default: 0.08s, try 0.05s for faster)', 
+                      default=0.08)
 
   args = parser.parse_args()    
   

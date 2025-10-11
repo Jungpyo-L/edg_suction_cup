@@ -53,6 +53,8 @@ class fileSaveHelp(object):
         print("grabbing columns from csv files into one dataframe")
         savingDictionary = {}
         errorCount = 0
+        # Initialize splitedList with current timestamp as fallback
+        splitedList = ['dataLog', datetime.now().strftime("%Y"), datetime.now().strftime("%m%d"), datetime.now().strftime("%H%M%S")]
         for fileName in fileList:
             print("trying file: ", fileName)
             try:    
