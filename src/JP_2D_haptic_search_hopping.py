@@ -88,7 +88,7 @@ def get_disEngagePosition(primitives):
   if primitives == 'trap':
     disEngagePosition =  [0.443, -.038, 0.013]
   elif primitives == 'dumbbell':
-    disEngagePosition =  [0.443, -.038, 0.013]
+    disEngagePosition =  [0.443 + 0.138, -.0395, 0.013]
   elif primitives == 'polygons':
     disEngagePosition =  [0.443, -.038, 0.013]
   else:
@@ -174,6 +174,7 @@ def run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub,
   startTime = time.time()     # For computing elapsed time
   iteration_count = 1         # Control iteration counter (starts at 1 for first check)
   pose_diff = 0               # Tracks Z-position error for compensation
+  orientation_error = [0, 0, 0]  # Tracks pitch/roll error for compensation [yaw_err, pitch_err, roll_err]
   
   # Path length tracking
   path_length_2d = 0.0        # Total 2D path length (XY plane) in meters
@@ -276,6 +277,18 @@ def run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub,
     measuredCurrPose = rtde_help.getCurrentPose()
     currPose = search_help.get_PoseStamped_from_T_initPose(T_move, measuredCurrPose)
     
+    # Apply orientation compensation to correct for pitch/roll drift from contact forces
+    q = currPose.pose.orientation
+    curr_euler = tf.transformations.euler_from_quaternion([q.x, q.y, q.z, q.w], 'szxy')
+    compensated_euler = [curr_euler[0] - orientation_error[0],  # yaw (usually keep as is)
+                        curr_euler[1] - orientation_error[1],  # pitch compensation
+                        curr_euler[2] - orientation_error[2]]  # roll compensation
+    compensated_quat = tf.transformations.quaternion_from_euler(compensated_euler[0], compensated_euler[1], compensated_euler[2], 'szxy')
+    currPose.pose.orientation.x = compensated_quat[0]
+    currPose.pose.orientation.y = compensated_quat[1]
+    currPose.pose.orientation.z = compensated_quat[2]
+    currPose.pose.orientation.w = compensated_quat[3]
+    
     # HOP UP: Lift 5mm to disengage from surface
     currPose.pose.position.z = currPose.pose.position.z + 5e-3
     rtde_help.goToPose_2Dhaptic(currPose)
@@ -292,6 +305,13 @@ def run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub,
     T_curr = search_help.get_Tmat_from_Pose(measuredCurrPose)
     args.final_yaw = convert_yawAngle(search_help.get_yawRotation_from_T(T_curr))
     pose_diff = measuredCurrPose.pose.position.z - currPose.pose.position.z  # Z-error for next iteration
+    
+    # Update orientation error for next iteration (similar to pose_diff for Z)
+    q_measured = measuredCurrPose.pose.orientation
+    q_commanded = currPose.pose.orientation
+    measured_euler = tf.transformations.euler_from_quaternion([q_measured.x, q_measured.y, q_measured.z, q_measured.w], 'szxy')
+    commanded_euler = tf.transformations.euler_from_quaternion([q_commanded.x, q_commanded.y, q_commanded.z, q_commanded.w], 'szxy')
+    orientation_error = [measured_euler[i] - commanded_euler[i] for i in range(3)]  # [yaw, pitch, roll] error
     
     # ===== UPDATE PATH LENGTH =====
     # Calculate cumulative path length traveled
@@ -427,8 +447,12 @@ def run_single_experiment(args, rtde_help, search_help, P_help, targetPWM_Pub,
   file_help.saveDataParams(args, appendTxt=f'jp_2D_hopping_ch_{args.ch}_{args.primitives}_controller_{args.controller}_exp{experiment_num:02d}_yaw{yaw_for_tracking*180/np.pi:.1f}deg')
   file_help.clearTmpFolder()
   
-  # Return to disengage pose
-  rtde_help.goToPose(disEngagePose)
+  # Return to disengage pose (first go 5mm higher, then to actual disEngagePose)
+  disEngagePose_high = copy.deepcopy(disEngagePose)
+  disEngagePose_high.pose.position.z = disEngagePose.pose.position.z + 5e-3  # 5mm higher
+  rtde_help.goToPose(disEngagePose_high)  # Go to higher position first
+  rospy.sleep(0.2)  # Brief pause
+  rtde_help.goToPose(disEngagePose)  # Then go to actual disEngagePose
   
   return {
     'experiment_num': experiment_num,
