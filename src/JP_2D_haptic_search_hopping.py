@@ -107,6 +107,222 @@ def generate_random_yaw():
   """
   return np.random.uniform(0, 2 * np.pi)
 
+def return_to_original_yaw(rtde_help, original_disEngagePose, total_yaw_rotated, yaw_step_deg):
+  """
+  Return the end effector to its original yaw position after a yaw sweep experiment.
+  
+  This function implements the key insight that to return to the original position:
+  1. Reverse the yaw direction (move in opposite direction)
+  2. Divide the total angle by 3 and execute in three separate movements
+  3. Each movement rotates -120 degrees (for a 360° sweep)
+  
+  Args:
+    rtde_help: RTDE helper for robot control
+    original_disEngagePose: The original disengage pose before the sweep
+    total_yaw_rotated: Total yaw angle rotated during the sweep (in radians)
+    yaw_step_deg: Yaw step size used in the sweep (in degrees)
+  
+  Returns:
+    Final yaw angle in degrees after all three movements
+  """
+  print(f"Returning to original yaw position...")
+  print(f"Total yaw rotated during sweep: {total_yaw_rotated * 180.0 / np.pi:.1f}°")
+  
+  # Calculate return angle per movement: reverse direction and divide by 3
+  return_angle_per_move = -total_yaw_rotated / 3.0
+  return_angle_per_move_deg = return_angle_per_move * 180.0 / np.pi
+  
+  print(f"Return angle per movement (reversed and divided by 3): {return_angle_per_move_deg:.1f}°")
+  print(f"Executing 3 separate movements of {return_angle_per_move_deg:.1f}° each...")
+  
+  # Get current pose for the first movement
+  current_pose = rtde_help.getCurrentPose()
+  
+  # Execute three separate movements
+  for move_num in range(1, 4):
+    print(f"--- Movement {move_num}/3 ---")
+    
+    # Get current pose and calculate new yaw
+    q = current_pose.pose.orientation
+    current_euler = tf.transformations.euler_from_quaternion([q.x, q.y, q.z, q.w], 'szxy')
+    
+    # Apply the return angle for this movement
+    new_yaw = current_euler[0] - return_angle_per_move  # Subtract to change rotation direction
+    setOrientation = tf.transformations.quaternion_from_euler(new_yaw, current_euler[1], current_euler[2], 'szxy')
+    
+    # Create new pose with corrected yaw
+    return_pose = copy.deepcopy(current_pose)
+    return_pose.pose.orientation.x = setOrientation[0]
+    return_pose.pose.orientation.y = setOrientation[1]
+    return_pose.pose.orientation.z = setOrientation[2]
+    return_pose.pose.orientation.w = setOrientation[3]
+    
+    # Move to the corrected yaw position
+    print(f"Moving {return_angle_per_move_deg:.1f}° (movement {move_num}/3)...")
+    rtde_help.goToPose(return_pose)
+    rospy.sleep(0.5)  # Brief pause to allow movement to complete
+    
+    # Update current_pose for next iteration
+    current_pose = rtde_help.getCurrentPose()
+    
+    # Show progress
+    q_current = current_pose.pose.orientation
+    current_euler = tf.transformations.euler_from_quaternion([q_current.x, q_current.y, q_current.z, q_current.w], 'szxy')
+    current_yaw_deg = current_euler[0] * 180.0 / np.pi
+    print(f"Current yaw after movement {move_num}: {current_yaw_deg:.1f}°")
+  
+  # Verify the final yaw angle
+  final_pose = rtde_help.getCurrentPose()
+  q_final = final_pose.pose.orientation
+  final_euler = tf.transformations.euler_from_quaternion([q_final.x, q_final.y, q_final.z, q_final.w], 'szxy')
+  final_yaw_deg = final_euler[0] * 180.0 / np.pi
+  
+  print(f"Return to original yaw completed. Final yaw: {final_yaw_deg:.1f}°")
+  
+  return final_yaw_deg
+
+def run_multi_controller_yaw_sweep(args, rtde_help, search_help, P_help, targetPWM_Pub, 
+                                  dataLoggerEnable, file_help, disEngagePose, rl_controller):
+  """
+  Run yaw sweep experiments with multiple controllers in sequence.
+  
+  This function automatically tests all four heuristic controllers:
+  - greedy
+  - yaw  
+  - momentum
+  - yaw_momentum
+  
+  For each controller, it runs the complete yaw sweep experiment and returns
+  to the original yaw position before moving to the next controller.
+  
+  Args:
+    args: Command line arguments containing experiment parameters
+    rtde_help: RTDE helper for robot control
+    search_help: Helper for 2D haptic search computations
+    P_help: Helper for pressure sensor data
+    targetPWM_Pub: ROS publisher for vacuum pump PWM control
+    dataLoggerEnable: ROS service proxy for enabling/disabling data logging
+    file_help: Helper for saving experiment data
+    disEngagePose: Safe position above the object (fixed for all experiments)
+    rl_controller: RL controller object (if using RL-based control)
+  
+  Returns:
+    Dictionary containing results from all controllers
+  """
+  
+  # Define the list of controllers to test
+  controllers_to_test = ['momentum', 'yaw_momentum']
+  
+  print(f"Starting multi-controller yaw sweep experiment")
+  print(f"Controllers to test: {', '.join(controllers_to_test)}")
+  print(f"Primitives: {args.primitives}")
+  print(f"Yaw step: {args.yaw_step}°")
+  print("=" * 60)
+  
+  # Store original disEngagePose for each controller
+  original_disEngagePose = copy.deepcopy(disEngagePose)
+  
+  # Results storage for all controllers
+  all_controller_results = {}
+  
+  # Run experiments for each controller
+  for controller_idx, controller_name in enumerate(controllers_to_test, 1):
+    print(f"\n{'='*20} CONTROLLER {controller_idx}/4: {controller_name.upper()} {'='*20}")
+    
+    # Update args with current controller
+    original_controller = args.controller
+    args.controller = controller_name
+    
+    # Create controller-specific folder name within the date folder
+    controller_folder_name = f"{args.primitives}_ch{args.ch}_{controller_name}"
+    print(f"Creating folder: {controller_folder_name}")
+    
+    # Create a new file_help instance with controller-specific folder
+    controller_file_help = fileSaveHelp(savingFolderName=controller_folder_name)
+    
+    # Modify the ResultSavingDirectory to include date folder first
+    from datetime import datetime
+    date_folder = datetime.now().strftime("%y%m%d")
+    base_folder = os.path.expanduser('~') + '/SuctionExperiment'
+    controller_file_help.ResultSavingDirectory = os.path.join(base_folder, date_folder, controller_folder_name)
+    
+    # Create the directory if it doesn't exist
+    if not os.path.exists(controller_file_help.ResultSavingDirectory):
+      os.makedirs(controller_file_help.ResultSavingDirectory)
+    
+    print(f"Data will be saved to: {controller_file_help.ResultSavingDirectory}")
+    
+    # Create a fresh disEngagePose for this controller
+    current_disEngagePose = copy.deepcopy(original_disEngagePose)
+    
+    # Run the yaw sweep experiment for this controller
+    print(f"Starting yaw sweep with {controller_name} controller...")
+    
+    try:
+      # Call the existing run_repeated_experiments function with controller-specific file_help
+      run_repeated_experiments(args, rtde_help, search_help, P_help, targetPWM_Pub,
+                              dataLoggerEnable, controller_file_help, current_disEngagePose, rl_controller, 
+                              mode='sweep')
+      
+      print(f"✓ {controller_name} controller completed successfully")
+      
+    except Exception as e:
+      print(f"✗ {controller_name} controller failed: {e}")
+      all_controller_results[controller_name] = {
+        'status': 'failed',
+        'error': str(e),
+        'folder': controller_file_help.ResultSavingDirectory
+      }
+      continue
+    
+    # Store results for this controller
+    all_controller_results[controller_name] = {
+      'status': 'completed',
+      'controller_index': controller_idx,
+      'folder': controller_file_help.ResultSavingDirectory
+    }
+    
+    # Brief pause between controllers
+    if controller_idx < len(controllers_to_test):
+      print(f"\nWaiting 2 seconds before next controller...")
+      rospy.sleep(2.0)
+    
+    # Restore original controller for next iteration
+    args.controller = original_controller
+  
+  # Print final summary
+  print(f"\n{'='*60}")
+  print("MULTI-CONTROLLER EXPERIMENT SUMMARY")
+  print(f"{'='*60}")
+  
+  completed_controllers = [name for name, result in all_controller_results.items() 
+                          if result['status'] == 'completed']
+  failed_controllers = [name for name, result in all_controller_results.items() 
+                       if result['status'] == 'failed']
+  
+  print(f"Total controllers tested: {len(controllers_to_test)}")
+  print(f"Successfully completed: {len(completed_controllers)}")
+  print(f"Failed: {len(failed_controllers)}")
+  
+  if completed_controllers:
+    print(f"Completed controllers: {', '.join(completed_controllers)}")
+    print(f"\nData saved in the following folders:")
+    for controller_name in completed_controllers:
+      if controller_name in all_controller_results:
+        folder_path = all_controller_results[controller_name].get('folder', 'Unknown')
+        print(f"  {controller_name}: {folder_path}")
+  
+  if failed_controllers:
+    print(f"Failed controllers: {', '.join(failed_controllers)}")
+    for controller_name in failed_controllers:
+      if controller_name in all_controller_results:
+        folder_path = all_controller_results[controller_name].get('folder', 'Unknown')
+        print(f"  {controller_name}: {folder_path}")
+  
+  print(f"{'='*60}")
+  
+  return all_controller_results
+
 def run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub, 
                           dataLoggerEnable, file_help, disEngagePose, rl_controller, 
                           experiment_num=None, random_yaw=None):
@@ -162,7 +378,11 @@ def run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub,
   dataLoggerEnable(True)   # Enable data logging (pressure, force, position, etc.)
 
   # ==================== MOVE TO ENGAGE POSITION ====================
-  # Calculate engage position: 5mm below the disengage position
+  # First, rotate to the new yaw at the disEngagePose height (before moving down)
+  rtde_help.goToPose(disEngagePose)
+  rospy.sleep(0.2)  # Brief pause after rotation
+  
+  # Then move straight down to engage position (5mm below)
   # This is the starting height for haptic search with contact to the object
   engagePosition = copy.deepcopy(disEngagePose.pose.position)
   engagePosition.z = engagePosition.z - 5e-3  # Lower by 5mm (critical for proper seal formation)
@@ -175,6 +395,23 @@ def run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub,
   iteration_count = 1         # Control iteration counter (starts at 1 for first check)
   pose_diff = 0               # Tracks Z-position error for compensation
   orientation_error = [0, 0, 0]  # Tracks pitch/roll error for compensation [yaw_err, pitch_err, roll_err]
+  
+  # Boundary limits (in world frame)
+  initial_x_position = disEngagePose.pose.position.x  # Store initial X position
+  initial_y_position = disEngagePose.pose.position.y  # Store initial Y position
+  
+  # Set boundary limit for non-trap objects (trap uses hardcoded asymmetric limits)
+  if args.primitives == 'trap':
+    boundary_limit = None  # Trap uses hardcoded asymmetric limits in boundary check
+  else:
+    boundary_limit = 15e-3  # 15mm boundary limit for other objects
+  
+  boundary_exceeded = False  # Flag for boundary violation
+  
+  # Determine boundary type based on primitive
+  # Trap and dumbbell: Y-axis only (elongated along X)
+  # Polygons: Circular 2D boundary
+  use_circular_boundary = args.primitives not in ['trap', 'dumbbell']
   
   # Path length tracking
   path_length_2d = 0.0        # Total 2D path length (XY plane) in meters
@@ -194,6 +431,7 @@ def run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub,
     # Read pressure from all chambers and check if vacuum seal is formed
     P_array = P_help.four_pressure
     reached_vacuum = all(np.array(P_array) < P_vac)  # All chambers below vacuum threshold?
+    # print(f"P_array: {P_array}")
     if reached_vacuum:
       # SUCCESS! Vacuum seal achieved
       suctionSuccessFlag = True
@@ -226,6 +464,77 @@ def run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub,
     # Read current robot pose and compute yaw angle for controller
     measuredCurrPose = rtde_help.getCurrentPose()
     T_curr = search_help.get_Tmat_from_Pose(measuredCurrPose)
+    
+    # ===== CHECK BOUNDARY CONDITION =====
+    # Different boundary checks based on primitive type
+    current_x = measuredCurrPose.pose.position.x
+    current_y = measuredCurrPose.pose.position.y
+    
+    if use_circular_boundary:
+      # Polygons: Check 2D circular boundary (yaw-invariant)
+      dx = current_x - initial_x_position
+      dy = current_y - initial_y_position
+      displacement = np.sqrt(dx**2 + dy**2)
+      boundary_type_str = "2D circular"
+      boundary_exceeded = displacement > boundary_limit
+    elif args.primitives == 'trap':
+      # Trap: Check both X and Y axes separately with asymmetric X limits
+      dx = current_x - initial_x_position  # Can be positive or negative
+      dy = abs(current_y - initial_y_position)
+      
+      # Check X-axis with asymmetric limits
+      if dx > 0:  # Positive X direction
+        x_exceeded = dx > 25e-3  # 25mm limit for positive X
+        x_limit = 20.0
+      else:  # Negative X direction
+        x_exceeded = abs(dx) > 8e-3  # 8mm limit for negative X
+        x_limit = 8.0
+      
+      y_exceeded = dy > 15e-3  # 15mm Y-axis limit
+      boundary_exceeded = x_exceeded or y_exceeded
+      
+      if x_exceeded:
+        boundary_type_str = "X-axis"
+        displacement = abs(dx)
+        x_direction = "positive" if dx > 0 else "negative"
+      elif y_exceeded:
+        boundary_type_str = "Y-axis"
+        displacement = dy
+        x_direction = None
+      else:
+        boundary_type_str = "None"
+        displacement = 0
+        x_direction = None
+    else:
+      # Dumbbell: Check Y-axis only (objects are elongated along X)
+      displacement = abs(current_y - initial_y_position)
+      boundary_type_str = "Y-axis"
+      boundary_exceeded = displacement > boundary_limit
+    
+    if boundary_exceeded:
+      args.timeOverFlag = True
+      args.elapsedTime = time.time() - startTime
+      suctionSuccessFlag = False
+      if experiment_num:
+        if args.primitives == 'trap':
+          if boundary_type_str == "X-axis":
+            print(f"Experiment {experiment_num}: FAILED - {boundary_type_str} boundary exceeded ({displacement*1000:.1f}mm > {x_limit:.1f}mm, {x_direction} direction)")
+          else:  # Y-axis
+            print(f"Experiment {experiment_num}: FAILED - {boundary_type_str} boundary exceeded ({displacement*1000:.1f}mm > 15.0mm)")
+        else:
+          print(f"Experiment {experiment_num}: FAILED - {boundary_type_str} boundary exceeded ({displacement*1000:.1f}mm > {boundary_limit*1000:.1f}mm)")
+      else:
+        if args.primitives == 'trap':
+          if boundary_type_str == "X-axis":
+            print(f"Suction controller failed! {boundary_type_str} boundary exceeded ({displacement*1000:.1f}mm > {x_limit:.1f}mm, {x_direction} direction)")
+          else:  # Y-axis
+            print(f"Suction controller failed! {boundary_type_str} boundary exceeded ({displacement*1000:.1f}mm > 15.0mm)")
+        else:
+          print(f"Suction controller failed! {boundary_type_str} boundary exceeded ({displacement*1000:.1f}mm > {boundary_limit*1000:.1f}mm)")
+      rtde_help.stopAtCurrPoseAdaptive()
+      targetPWM_Pub.publish(DUTYCYCLE_0)  # Turn off vacuum
+      rospy.sleep(0.1)
+      break
     yaw_angle = convert_yawAngle(search_help.get_yawRotation_from_T(T_curr))
 
     # ===== COMPUTE CONTROL ACTION =====
@@ -363,6 +672,7 @@ def run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub,
   args.iteration_count = iteration_count
   args.path_length_2d = path_length_2d
   args.path_length_3d = path_length_3d
+  args.boundary_exceeded = boundary_exceeded
   
   return {
     'success': suctionSuccessFlag,
@@ -370,7 +680,8 @@ def run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub,
     'elapsed_time': args.elapsedTime if hasattr(args, 'elapsedTime') else 0,
     'final_yaw': args.final_yaw if hasattr(args, 'final_yaw') else 0,
     'path_length_2d': path_length_2d,
-    'path_length_3d': path_length_3d
+    'path_length_3d': path_length_3d,
+    'boundary_exceeded': boundary_exceeded
   }
 
 def run_single_experiment(args, rtde_help, search_help, P_help, targetPWM_Pub, 
@@ -510,27 +821,54 @@ def run_repeated_experiments(args, rtde_help, search_help, P_help, targetPWM_Pub
     return
   
   # ==================== SETUP EXPERIMENT PARAMETERS ====================
+  # Store original disEngagePose for return-to-original-yaw functionality
+  original_disEngagePose = copy.deepcopy(disEngagePose)
+  
   if mode == 'sweep':
     # YAW SWEEP MODE: Systematically sweep through 360 degrees
     yaw_step_deg = args.yaw_step  # Step size in degrees (configurable)
     num_experiments = int(360 / yaw_step_deg)  # Number of experiments based on step size
     yaw_step_rad = yaw_step_deg * np.pi / 180.0  # Incremental step in radians
     mode_description = f"yaw sweep (0° to {360-yaw_step_deg:.0f}° in {yaw_step_deg:.0f}° steps, {num_experiments} experiments)"
+    
+    # Handle resuming from a specific experiment
+    start_exp = args.start_experiment
+    if start_exp > 1:
+      print(f"RESUMING from experiment {start_exp}")
+      # Calculate the cumulative yaw for the starting experiment
+      # Experiment 1 is at yaw 0°, experiment 2 at yaw_step_deg, etc.
+      cumulative_yaw = (start_exp - 1) * yaw_step_rad
+      
+      # Update disEngagePose to the correct starting yaw
+      q = disEngagePose.pose.orientation
+      current_euler = tf.transformations.euler_from_quaternion([q.x, q.y, q.z, q.w], 'szxy')
+      new_yaw = current_euler[0] - cumulative_yaw  # Apply the cumulative yaw
+      setOrientation = tf.transformations.quaternion_from_euler(new_yaw, current_euler[1], current_euler[2], 'szxy')
+      disEngagePose.pose.orientation.x = setOrientation[0]
+      disEngagePose.pose.orientation.y = setOrientation[1]
+      disEngagePose.pose.orientation.z = setOrientation[2]
+      disEngagePose.pose.orientation.w = setOrientation[3]
+      print(f"Starting yaw angle: {cumulative_yaw * 180.0 / np.pi:.1f}°")
+    else:
+      cumulative_yaw = 0.0
   else:
     # RANDOM YAW MODE: Random yaw angles for each experiment
     num_experiments = 10
     yaw_angles = [generate_random_yaw() for _ in range(num_experiments)]
     mode_description = "random yaw angles"
+    start_exp = args.start_experiment if hasattr(args, 'start_experiment') else 1
+    cumulative_yaw = 0.0
   
   results = []
-  cumulative_yaw = 0.0  # Track cumulative yaw for sweep mode
   
   print(f"Starting {num_experiments} repeated experiments for {args.primitives}")
   print(f"Mode: {mode_description}")
+  if start_exp > 1:
+    print(f"Resuming from experiment {start_exp} to {num_experiments}")
   print("=" * 50)
   
   # ==================== RUN EXPERIMENTS ====================
-  for i in range(num_experiments):
+  for i in range(start_exp - 1, num_experiments):  # Start from start_exp-1 (0-indexed)
     if mode == 'sweep':
       # For sweep mode: yaw is already in disEngagePose, so pass 0 (no additional yaw)
       # cumulative_yaw tracks the total yaw for display purposes
@@ -556,6 +894,14 @@ def run_repeated_experiments(args, rtde_help, search_help, P_help, targetPWM_Pub
     
     results.append(result)
     
+    # Display running statistics
+    successful_so_far = len([r for r in results if r['success']])
+    success_rate_so_far = successful_so_far / len(results) * 100
+    print(f"Running stats: {successful_so_far}/{len(results)} successful ({success_rate_so_far:.1f}% success rate)")
+    if successful_so_far > 0:
+      avg_iterations_so_far = np.mean([r['iterations'] for r in results if r['success']])
+      print(f"Average iterations (successful so far): {avg_iterations_so_far:.1f}")
+    
     # Update disEngagePose with new yaw for next experiment (sweep mode only)
     if mode == 'sweep' and i < num_experiments - 1:
       cumulative_yaw += yaw_increment
@@ -580,10 +926,13 @@ def run_repeated_experiments(args, rtde_help, search_help, P_help, targetPWM_Pub
   print("=" * 50)
   
   successful_experiments = [r for r in results if r['success']]
+  boundary_failures = [r for r in results if r.get('boundary_exceeded', False)]
   success_rate = len(successful_experiments) / len(results) * 100
   
   print(f"Total experiments: {len(results)}")
   print(f"Successful experiments: {len(successful_experiments)}")
+  print(f"Failed experiments: {len(results) - len(successful_experiments)}")
+  print(f"  - Boundary exceeded failures: {len(boundary_failures)}")
   print(f"Success rate: {success_rate:.1f}%")
   
   if successful_experiments:
@@ -605,6 +954,8 @@ def run_repeated_experiments(args, rtde_help, search_help, P_help, targetPWM_Pub
     'mode_description': mode_description,
     'total_experiments': len(results),
     'successful_experiments': len(successful_experiments),
+    'failed_experiments': len(results) - len(successful_experiments),
+    'boundary_exceeded_failures': len(boundary_failures),
     'success_rate': success_rate,
     'results': results
   }
@@ -620,6 +971,27 @@ def run_repeated_experiments(args, rtde_help, search_help, P_help, targetPWM_Pub
     summary_data['avg_path_length_2d_mm'] = summary_data['avg_path_length_2d'] * 1000  # Convert to mm for convenience
     summary_data['avg_path_length_3d_mm'] = summary_data['avg_path_length_3d'] * 1000  # Convert to mm for convenience
   
+  # ==================== RETURN TO ORIGINAL YAW ====================
+  # After completing all experiments, return to original yaw position
+  if mode == 'sweep':
+    # Calculate total yaw rotated during the sweep
+    total_yaw_rotated = cumulative_yaw
+    print(f"\n--- Returning to original yaw position ---")
+    print(f"Total yaw rotated during sweep: {total_yaw_rotated * 180.0 / np.pi:.1f}°")
+    
+    # Call the return function
+    final_yaw_deg = return_to_original_yaw(rtde_help, original_disEngagePose, total_yaw_rotated, yaw_step_deg)
+    
+    # Update summary data with return information
+    summary_data['return_to_original_yaw'] = {
+      'total_yaw_rotated_deg': total_yaw_rotated * 180.0 / np.pi,
+      'return_angle_deg': -total_yaw_rotated * 180.0 / (3.0 * np.pi),
+      'final_yaw_deg': final_yaw_deg
+    }
+  else:
+    print(f"\n--- Random mode: No return to original yaw needed ---")
+    summary_data['return_to_original_yaw'] = None
+
   # Save summary to file with mode in filename
   summary_filename = f"experiment_summary_{args.primitives}_{args.controller}_ch{args.ch}_{mode}.json"
   summary_path = os.path.join(file_help.ResultSavingDirectory, summary_filename)
@@ -686,14 +1058,16 @@ def main(args):
   rtde_help = rtdeHelp(125)
   rospy.sleep(0.5)
   file_help = fileSaveHelp()
-  search_help = hapticSearch2DHelp(d_lat = 0.5e-3, d_yaw=1.5, n_ch = args.ch, p_reverse = args.reverse) # d_lat is important for the haptic search (if it is too small, the controller will fail)
+  search_help = hapticSearch2DHelp(P_vac = -18000, d_lat = 1.0e-3, d_yaw=1.5, damping_factor=0.7, n_ch = args.ch, p_reverse = args.reverse) # d_lat is important for the haptic search (if it is too small, the controller will fail)
 
   # Set the TCP offset and calibration matrix
   rospy.sleep(0.5)
   rtde_help.setTCPoffset([0, 0, 0.150, 0, 0, 0])
   # for 5 and 6-chambered suction cups, the 3D printed fixtures are longer than 3 and 4-chambered suction cups.
-  if args.ch == 6 or args.ch == 5:
-    rtde_help.setTCPoffset([0, 0, 0.150 + 0.02, 0, 0, 0])
+  if args.ch == 5:
+    rtde_help.setTCPoffset([0, 0, 0.150 + 0.019, 0, 0, 0])
+  if args.ch == 6:
+    rtde_help.setTCPoffset([0, 0, 0.150 + 0.020, 0, 0, 0])
   rospy.sleep(0.2)
 
 
@@ -760,10 +1134,16 @@ def main(args):
 
     # Check if we should run repeated experiments for trap/dumbbell
     if args.primitives in ['trap', 'dumbbell']:
-      print(f"Running repeated experiments for {args.primitives} primitive")
-      run_repeated_experiments(args, rtde_help, search_help, P_help, targetPWM_Pub, 
-                              dataLoggerEnable, file_help, disEngagePose, rl_controller, 
-                              mode=args.yaw_mode)
+      if args.multi_controller:
+        print(f"Running multi-controller yaw sweep for {args.primitives} primitive")
+        multi_controller_results = run_multi_controller_yaw_sweep(args, rtde_help, search_help, P_help, targetPWM_Pub, 
+                                                                dataLoggerEnable, file_help, disEngagePose, rl_controller)
+        print(f"Multi-controller experiment completed!")
+      else:
+        print(f"Running repeated experiments for {args.primitives} primitive")
+        run_repeated_experiments(args, rtde_help, search_help, P_help, targetPWM_Pub, 
+                                dataLoggerEnable, file_help, disEngagePose, rl_controller, 
+                                mode=args.yaw_mode)
     else:
       input("Press <Enter> to Start the haptic search with hopping motion")
       
@@ -793,7 +1173,7 @@ if __name__ == '__main__':
   parser = argparse.ArgumentParser()
   parser.add_argument('--primitives', type=str, help='types of primitives (trap, dumbbell, polygons, etc.)', default= "trap")
   parser.add_argument('--ch', type=int, help='number of channel', default= 4)
-  parser.add_argument('--controller', type=str, help='2D haptic contollers (greedy, yaw, momentum, yaw_momentum, rl_hgreedy, rl_hmomentum, rl_hyaw, rl_hyaw_momentum)', default= "yaw_momentum")
+  parser.add_argument('--controller', type=str, help='2D haptic contollers (greedy, yaw, momentum, yaw_momentum, rl_hgreedy, rl_hmomentum, rl_hyaw, rl_hyaw_momentum). Use --multi_controller to test all four heuristic controllers automatically.', default= "yaw_momentum")
   parser.add_argument('--max_iterations', type=int, help='maximum number of iterations (default: 50)', default= 50)
   parser.add_argument('--reverse', type=bool, help='when we use reverse airflow', default= False)
   parser.add_argument('--yaw_mode', type=str, choices=['sweep', 'random'], 
@@ -801,10 +1181,14 @@ if __name__ == '__main__':
                       default='sweep')
   parser.add_argument('--yaw_step', type=float, help='yaw step size in degrees for sweep mode (default: 5°, try 10° or 15° for faster sweeps)', 
                       default=10.0)
+  parser.add_argument('--start_experiment', type=int, help='experiment number to start from (default: 1, use this to resume from a specific experiment)', 
+                      default=1)
   parser.add_argument('--pause_time', type=float, help='pause time between experiments in seconds (default: 0.5s, try 0.2s for faster)', 
-                      default=0.5)
+                      default=0.2)
   parser.add_argument('--hop_sleep', type=float, help='sleep time after hopping down in seconds (default: 0.08s, try 0.05s for faster)', 
-                      default=0.08)
+                      default=0.15)
+  parser.add_argument('--multi_controller', action='store_true', 
+                      help='run yaw sweep with all four controllers (greedy, yaw, momentum, yaw_momentum) in sequence')
 
   args = parser.parse_args()    
   

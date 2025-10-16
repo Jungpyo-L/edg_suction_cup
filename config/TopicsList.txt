@@ -1,4 +1,3 @@
-/netft_data
 /SensorPacket
 /pwm
 /endEffectorPose

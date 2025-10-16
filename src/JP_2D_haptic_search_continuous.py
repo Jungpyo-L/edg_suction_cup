@@ -109,6 +109,8 @@ def main(args):
   # Set the TCP offset and calibration matrix
   rospy.sleep(0.5)
   rtde_help.setTCPoffset([0, 0, 0.150, 0, 0, 0])
+  if args.ch == 5:
+    rtde_help.setTCPoffset([0, 0, 0.150 + 0.022, 0, 0, 0])
   if args.ch == 6:
     rtde_help.setTCPoffset([0, 0, 0.150 + 0.02, 0, 0, 0])
   rospy.sleep(0.2)
