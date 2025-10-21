@@ -91,8 +91,6 @@ def get_disEngagePosition(primitives):
     disEngagePosition =  [0.443, -.038, 0.013]
   elif primitives == 'dumbbell':
     disEngagePosition =  [0.443 + 0.138, -.0395, 0.013]
-  elif primitives == 'polygons':
-    disEngagePosition =  [0.443, -.038, 0.013]
   else:
     # Default fallback for unknown primitives
     print(f"Warning: Unknown primitives '{primitives}', using trap position")
@@ -588,8 +586,7 @@ def run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub,
   
   # Determine boundary type based on primitive
   # Trap and dumbbell: Y-axis only (elongated along X)
-  # Polygons: Circular 2D boundary
-  use_circular_boundary = args.primitives not in ['trap', 'dumbbell']
+  use_circular_boundary = False  # Only trap and dumbbell are supported
   
   # Path length tracking
   path_length_2d = 0.0        # Total 2D path length (XY plane) in meters
@@ -648,14 +645,7 @@ def run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub,
     current_x = measuredCurrPose.pose.position.x
     current_y = measuredCurrPose.pose.position.y
     
-    if use_circular_boundary:
-      # Polygons: Check 2D circular boundary (yaw-invariant)
-      dx = current_x - initial_x_position
-      dy = current_y - initial_y_position
-      displacement = np.sqrt(dx**2 + dy**2)
-      boundary_type_str = "2D circular"
-      boundary_exceeded = displacement > boundary_limit
-    elif args.primitives == 'trap':
+    if args.primitives == 'trap':
       # Trap: Check both X and Y axes separately with asymmetric X limits
       dx = current_x - initial_x_position  # Can be positive or negative
       dy = abs(current_y - initial_y_position)
@@ -959,7 +949,7 @@ def run_repeated_experiments(args, rtde_help, search_help, P_help, targetPWM_Pub
   """
   Run repeated haptic search experiments with different yaw orientations.
   
-  This function is specifically designed for trap and dumbbell primitives where
+  This function is designed for trap and dumbbell primitives where
   we want to test the same fixed starting position with different yaw angles.
   
   Two modes are available:
@@ -1202,7 +1192,7 @@ def main(args):
   
   Args:
     args: Parsed command line arguments containing:
-      - primitives: Type of shape ('trap', 'dumbbell', 'polygons')
+      - primitives: Type of shape ('trap', 'dumbbell')
       - ch: Number of suction cup chambers (3, 4, 5, or 6)
       - controller: Controller type (greedy, yaw_momentum, rl_hgreedy, etc.)
       - max_iterations: Maximum control iterations per experiment
@@ -1354,7 +1344,7 @@ def main(args):
 if __name__ == '__main__':  
   import argparse
   parser = argparse.ArgumentParser()
-  parser.add_argument('--primitives', type=str, help='types of primitives (trap, dumbbell, polygons, etc.)', default= "trap")
+  parser.add_argument('--primitives', type=str, help='types of primitives (trap, dumbbell, etc.). For trap/dumbbell: supports repeated experiments, multi-controller, and sweep modes.', default= "trap")
   parser.add_argument('--ch', type=int, help='number of channel', default= 4)
   parser.add_argument('--controller', type=str, help='2D haptic contollers (greedy, yaw, momentum, yaw_momentum, rl_hgreedy, rl_hmomentum, rl_hyaw, rl_hyaw_momentum). Use --multi_controller to test all four heuristic controllers automatically, or --object_sweep to test both trap and dumbbell objects.', default= "yaw_momentum")
   parser.add_argument('--max_iterations', type=int, help='maximum number of iterations (default: 50)', default= 50)
