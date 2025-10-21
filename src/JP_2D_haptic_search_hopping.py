@@ -7,9 +7,11 @@
 #              The difference between this script and JP_2D_haptic_search_continuous.py is that this script has a hopping motion.
 #              This script will test heuristic controller and residual RL controller with hopping motion.
 #              
-#              For trap and dumbbell primitives, it supports two experiment modes:
-#              - 'sweep' mode (default): Systematically sweeps 360° in 5° steps (72 experiments)
+#              For trap and dumbbell primitives, it supports multiple experiment modes:
+#              - 'sweep' mode (default): Systematically sweeps 360° in configurable steps
 #              - 'random' mode: Tests 10 random yaw angles
+#              - 'multi_controller' mode: Tests all four controllers (greedy, yaw, momentum, yaw_momentum)
+#              - 'object_sweep' mode: Tests both trap and dumbbell with all four controllers
 
 # imports
 try:
@@ -182,7 +184,8 @@ def return_to_original_yaw(rtde_help, original_disEngagePose, total_yaw_rotated,
   return final_yaw_deg
 
 def run_multi_controller_yaw_sweep(args, rtde_help, search_help, P_help, targetPWM_Pub, 
-                                  dataLoggerEnable, file_help, disEngagePose, rl_controller):
+                                  dataLoggerEnable, file_help, disEngagePose, rl_controller, 
+                                  object_type=None):
   """
   Run yaw sweep experiments with multiple controllers in sequence.
   
@@ -205,17 +208,21 @@ def run_multi_controller_yaw_sweep(args, rtde_help, search_help, P_help, targetP
     file_help: Helper for saving experiment data
     disEngagePose: Safe position above the object (fixed for all experiments)
     rl_controller: RL controller object (if using RL-based control)
+    object_type: Optional object type override (for object sweep mode)
   
   Returns:
     Dictionary containing results from all controllers
   """
   
   # Define the list of controllers to test
-  controllers_to_test = ['momentum', 'yaw_momentum']
+  controllers_to_test = ['greedy', 'yaw', 'momentum', 'yaw_momentum']
+  
+  # Use object_type override if provided, otherwise use args.primitives
+  current_primitives = object_type if object_type is not None else args.primitives
   
   print(f"Starting multi-controller yaw sweep experiment")
   print(f"Controllers to test: {', '.join(controllers_to_test)}")
-  print(f"Primitives: {args.primitives}")
+  print(f"Primitives: {current_primitives}")
   print(f"Yaw step: {args.yaw_step}°")
   print("=" * 60)
   
@@ -234,7 +241,7 @@ def run_multi_controller_yaw_sweep(args, rtde_help, search_help, P_help, targetP
     args.controller = controller_name
     
     # Create controller-specific folder name within the date folder
-    controller_folder_name = f"{args.primitives}_ch{args.ch}_{controller_name}"
+    controller_folder_name = f"{current_primitives}_ch{args.ch}_{controller_name}"
     print(f"Creating folder: {controller_folder_name}")
     
     # Create a new file_help instance with controller-specific folder
@@ -322,6 +329,177 @@ def run_multi_controller_yaw_sweep(args, rtde_help, search_help, P_help, targetP
   print(f"{'='*60}")
   
   return all_controller_results
+
+def run_object_sweep_experiments(args, rtde_help, search_help, P_help, targetPWM_Pub, 
+                                 dataLoggerEnable, file_help, rl_controller):
+  """
+  Run automated experiments across multiple objects (trap and dumbbell).
+  
+  This function implements the complete object sweep workflow:
+  1. First runs trap object with all four controllers (greedy, yaw, momentum, yaw_momentum)
+  2. Then moves robot to dumbbell object with 5mm Z offset for clearance
+  3. Runs dumbbell object with all four controllers (greedy, yaw, momentum, yaw_momentum)
+  
+  The robot automatically moves between objects with proper clearance to avoid
+  collision with objects between trap and dumbbell positions.
+  
+  Args:
+    args: Command line arguments containing experiment parameters
+    rtde_help: RTDE helper for robot control
+    search_help: Helper for 2D haptic search computations
+    P_help: Helper for pressure sensor data
+    targetPWM_Pub: ROS publisher for vacuum pump PWM control
+    dataLoggerEnable: ROS service proxy for enabling/disabling data logging
+    file_help: Helper for saving experiment data
+    rl_controller: RL controller object (if using RL-based control)
+  
+  Returns:
+    Dictionary containing results from both objects
+  """
+  
+  print(f"Starting object sweep experiments")
+  print(f"Objects to test: trap (all four controllers), dumbbell (all four controllers)")
+  print(f"Yaw step: {args.yaw_step}°")
+  print("=" * 60)
+  
+  # Results storage for all objects
+  all_object_results = {}
+  
+  # ==================== TRAP OBJECT EXPERIMENTS ====================
+  print(f"\n{'='*20} OBJECT 1/2: TRAP {'='*20}")
+  
+  # Get trap disengage position
+  trap_disengage_position = get_disEngagePosition('trap')
+  
+  # Set the default yaw angle for trap
+  if args.ch == 3:
+    default_yaw = pi/2 - 60*pi/180
+  elif args.ch == 4:
+    default_yaw = pi/2 - 45*pi/180
+  elif args.ch == 5:
+    default_yaw = pi/2 - 90*pi/180
+  elif args.ch == 6:
+    default_yaw = pi/2 - 60*pi/180
+  
+  setOrientation = tf.transformations.quaternion_from_euler(default_yaw, pi, 0, 'szxy')
+  trap_disEngagePose = rtde_help.getPoseObj(trap_disengage_position, setOrientation)
+  
+  print(f"Moving to trap object position...")
+  rtde_help.goToPose(trap_disEngagePose)
+  rospy.sleep(1.0)  # Allow robot to settle
+  
+  # Run trap experiments with all four controllers
+  try:
+    trap_results = run_multi_controller_yaw_sweep(args, rtde_help, search_help, P_help, targetPWM_Pub,
+                                                 dataLoggerEnable, file_help, trap_disEngagePose, rl_controller,
+                                                 object_type='trap')
+    
+    print(f"✓ Trap object experiments completed successfully")
+    all_object_results['trap'] = {
+      'status': 'completed',
+      'object_type': 'trap',
+      'controllers_tested': len(trap_results),
+      'results': trap_results
+    }
+    
+  except Exception as e:
+    print(f"✗ Trap object experiments failed: {e}")
+    all_object_results['trap'] = {
+      'status': 'failed',
+      'object_type': 'trap',
+      'error': str(e)
+    }
+  
+  # ==================== MOVE TO DUMBBELL OBJECT ====================
+  print(f"\n{'='*20} MOVING TO DUMBBELL OBJECT {'='*20}")
+  
+  # Get dumbbell disengage position
+  dumbbell_disengage_position = get_disEngagePosition('dumbbell')
+  
+  # Create dumbbell disengage pose with same orientation as trap
+  dumbbell_disEngagePose = rtde_help.getPoseObj(dumbbell_disengage_position, setOrientation)
+  
+  # Calculate movement path with 5mm Z offset for clearance
+  print(f"Moving from trap to dumbbell with 5mm Z clearance...")
+  
+  # First, go to a high position above trap (5mm higher than trap disengage)
+  high_trap_pose = copy.deepcopy(trap_disEngagePose)
+  high_trap_pose.pose.position.z = trap_disEngagePose.pose.position.z + 5e-3
+  
+  # Then move to high position above dumbbell (5mm higher than dumbbell disengage)
+  high_dumbbell_pose = copy.deepcopy(dumbbell_disEngagePose)
+  high_dumbbell_pose.pose.position.z = dumbbell_disEngagePose.pose.position.z + 5e-3
+  
+  # Execute the movement sequence
+  print(f"Step 1: Moving to high position above trap...")
+  rtde_help.goToPose(high_trap_pose)
+  rospy.sleep(0.5)
+  
+  print(f"Step 2: Moving to high position above dumbbell...")
+  rtde_help.goToPose(high_dumbbell_pose)
+  rospy.sleep(0.5)
+  
+  print(f"Step 3: Moving to dumbbell disengage position...")
+  rtde_help.goToPose(dumbbell_disEngagePose)
+  rospy.sleep(1.0)  # Allow robot to settle
+  
+  print(f"✓ Successfully moved to dumbbell object position")
+  
+  # ==================== DUMBBELL OBJECT EXPERIMENTS ====================
+  print(f"\n{'='*20} OBJECT 2/2: DUMBBELL {'='*20}")
+  
+  # Run dumbbell experiments with all four controllers
+  try:
+    dumbbell_results = run_multi_controller_yaw_sweep(args, rtde_help, search_help, P_help, targetPWM_Pub,
+                                                     dataLoggerEnable, file_help, dumbbell_disEngagePose, rl_controller,
+                                                     object_type='dumbbell')
+    
+    print(f"✓ Dumbbell object experiments completed successfully")
+    all_object_results['dumbbell'] = {
+      'status': 'completed',
+      'object_type': 'dumbbell',
+      'controllers_tested': len(dumbbell_results),
+      'results': dumbbell_results
+    }
+    
+  except Exception as e:
+    print(f"✗ Dumbbell object experiments failed: {e}")
+    all_object_results['dumbbell'] = {
+      'status': 'failed',
+      'object_type': 'dumbbell',
+      'error': str(e)
+    }
+  
+  # ==================== FINAL SUMMARY ====================
+  print(f"\n{'='*60}")
+  print("OBJECT SWEEP EXPERIMENT SUMMARY")
+  print(f"{'='*60}")
+  
+  completed_objects = [name for name, result in all_object_results.items() 
+                      if result['status'] == 'completed']
+  failed_objects = [name for name, result in all_object_results.items() 
+                   if result['status'] == 'failed']
+  
+  print(f"Total objects tested: 2")
+  print(f"Successfully completed: {len(completed_objects)}")
+  print(f"Failed: {len(failed_objects)}")
+  
+  if completed_objects:
+    print(f"Completed objects: {', '.join(completed_objects)}")
+    for object_name in completed_objects:
+      if object_name in all_object_results:
+        result = all_object_results[object_name]
+        print(f"  {object_name}: {result['controllers_tested']} controllers tested")
+  
+  if failed_objects:
+    print(f"Failed objects: {', '.join(failed_objects)}")
+    for object_name in failed_objects:
+      if object_name in all_object_results:
+        print(f"  {object_name}: {all_object_results[object_name].get('error', 'Unknown error')}")
+  
+  print(f"{'='*60}")
+  
+  return all_object_results
 
 def run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub, 
                           dataLoggerEnable, file_help, disEngagePose, rl_controller, 
@@ -1134,7 +1312,12 @@ def main(args):
 
     # Check if we should run repeated experiments for trap/dumbbell
     if args.primitives in ['trap', 'dumbbell']:
-      if args.multi_controller:
+      if args.object_sweep:
+        print(f"Running object sweep experiments (trap + dumbbell)")
+        object_sweep_results = run_object_sweep_experiments(args, rtde_help, search_help, P_help, targetPWM_Pub,
+                                                          dataLoggerEnable, file_help, rl_controller)
+        print(f"Object sweep experiment completed!")
+      elif args.multi_controller:
         print(f"Running multi-controller yaw sweep for {args.primitives} primitive")
         multi_controller_results = run_multi_controller_yaw_sweep(args, rtde_help, search_help, P_help, targetPWM_Pub, 
                                                                 dataLoggerEnable, file_help, disEngagePose, rl_controller)
@@ -1173,7 +1356,7 @@ if __name__ == '__main__':
   parser = argparse.ArgumentParser()
   parser.add_argument('--primitives', type=str, help='types of primitives (trap, dumbbell, polygons, etc.)', default= "trap")
   parser.add_argument('--ch', type=int, help='number of channel', default= 4)
-  parser.add_argument('--controller', type=str, help='2D haptic contollers (greedy, yaw, momentum, yaw_momentum, rl_hgreedy, rl_hmomentum, rl_hyaw, rl_hyaw_momentum). Use --multi_controller to test all four heuristic controllers automatically.', default= "yaw_momentum")
+  parser.add_argument('--controller', type=str, help='2D haptic contollers (greedy, yaw, momentum, yaw_momentum, rl_hgreedy, rl_hmomentum, rl_hyaw, rl_hyaw_momentum). Use --multi_controller to test all four heuristic controllers automatically, or --object_sweep to test both trap and dumbbell objects.', default= "yaw_momentum")
   parser.add_argument('--max_iterations', type=int, help='maximum number of iterations (default: 50)', default= 50)
   parser.add_argument('--reverse', type=bool, help='when we use reverse airflow', default= False)
   parser.add_argument('--yaw_mode', type=str, choices=['sweep', 'random'], 
@@ -1189,6 +1372,8 @@ if __name__ == '__main__':
                       default=0.15)
   parser.add_argument('--multi_controller', action='store_true', 
                       help='run yaw sweep with all four controllers (greedy, yaw, momentum, yaw_momentum) in sequence')
+  parser.add_argument('--object_sweep', action='store_true', 
+                      help='run automated object sweep: trap and dumbbell both with all four controllers')
 
   args = parser.parse_args()    
   
