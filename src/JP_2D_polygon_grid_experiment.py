@@ -102,13 +102,17 @@ def get_matching_heuristic_controller(rl_controller_name):
     Get the matching heuristic controller for a given RL controller.
     
     Args:
-        rl_controller_name: Name of the RL controller (e.g., 'rl_hyaw_momentum')
+        rl_controller_name: Name of the RL controller (e.g., 'rl_hyaw_momentum', 'rl_hgreedy')
     
     Returns:
         String name of the matching heuristic controller
     """
-    # Remove 'rl_' prefix and 'h' prefix to get the base controller type
-    base_name = rl_controller_name.replace('rl_', '').replace('h', '')
+    # Remove 'rl_' prefix to get the base controller type
+    base_name = rl_controller_name.replace('rl_', '')
+    
+    # Remove 'h' prefix if present (for models like 'hgreedy', 'hyaw', etc.)
+    if base_name.startswith('h'):
+        base_name = base_name[1:]  # Remove 'h' prefix
     
     # Map RL controller names to heuristic controller names
     controller_mapping = {
@@ -124,7 +128,7 @@ def get_matching_heuristic_controller(rl_controller_name):
 
 
 def run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub, 
-                          dataLoggerEnable, file_help, disEngagePose, rl_controller, 
+                          dataLoggerEnable, file_help, disEngagePose, rl_controllers_dict, 
                           experiment_num=None, random_yaw=None):
     """
     Run the main haptic search loop with hopping motion for polygon experiments.
@@ -145,7 +149,7 @@ def run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub,
         dataLoggerEnable: ROS service proxy for enabling/disabling data logging
         file_help: Helper for saving experiment data
         disEngagePose: Safe position above the object (starting pose)
-        rl_controller: RL controller object (if using RL-based control)
+        rl_controllers_dict: Dictionary of RL controllers {controller_name: rl_controller}
         experiment_num: Optional experiment number (for repeated experiments)
         random_yaw: Optional random yaw value (for repeated experiments)
     
@@ -199,6 +203,9 @@ def run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub,
     path_length_2d = 0.0
     path_length_3d = 0.0
     prev_position = None
+    
+    # Get the appropriate RL controller for this controller (None if heuristic)
+    rl_controller = rl_controllers_dict.get(args.controller, None)
     
     # Reset RL controller history if using RL-based control
     if rl_controller and rl_controller.is_model_loaded():
@@ -629,7 +636,7 @@ def test_polygon_position(args, rtde_help, polygon_row, polygon_col):
 
 
 def run_single_polygon_experiment(args, rtde_help, search_help, P_help, targetPWM_Pub,
-                                 dataLoggerEnable, file_help, rl_controller, 
+                                 dataLoggerEnable, file_help, rl_controllers_dict, 
                                  polygon_row, polygon_col, controller_name, 
                                  num_trials=None):
     """
@@ -643,7 +650,7 @@ def run_single_polygon_experiment(args, rtde_help, search_help, P_help, targetPW
         targetPWM_Pub: ROS publisher for vacuum pump PWM control
         dataLoggerEnable: ROS service proxy for enabling/disabling data logging
         file_help: Helper for saving experiment data
-        rl_controller: RL controller object
+        rl_controllers_dict: Dictionary of RL controllers {controller_name: rl_controller}
         polygon_row: Row index of the polygon (0, 1, 2)
         polygon_col: Column index of the polygon (0, 1, 2, 3)
         controller_name: Name of the controller being tested
@@ -719,7 +726,7 @@ def run_single_polygon_experiment(args, rtde_help, search_help, P_help, targetPW
         # Run haptic search experiment
         result = run_haptic_search_loop(
             args, rtde_help, search_help, P_help, targetPWM_Pub,
-            dataLoggerEnable, file_help, validated_pose, rl_controller,
+            dataLoggerEnable, file_help, validated_pose, rl_controllers_dict,
             experiment_num=trial_num, random_yaw=random_yaw
         )
         
@@ -923,15 +930,26 @@ def run_polygon_grid_experiment(args, rtde_help, search_help, P_help, targetPWM_
         print(f"DEBUG MODE ENABLED: Fast testing with 1 trial per polygon (full haptic search still performed)")
     print("=" * 60)
     
-    # Initialize RL controller if needed
-    if 'rl_hyaw_momentum' in controllers:
-        try:
-            rl_controller = create_rl_controller(args.ch, 'hyaw_momentum')
-            print(f"RL controller initialized: ch{args.ch}_hyaw_momentum")
-        except Exception as e:
-            print(f"Failed to initialize RL controller: {e}")
-            print("Removing RL controller from test list")
-            controllers = [c for c in controllers if not c.startswith('rl_')]
+    # Initialize RL controllers if needed
+    rl_controllers = {}
+    controllers_to_remove = []
+    
+    for controller_name in controllers:
+        if controller_name.startswith('rl_'):
+            try:
+                # Extract model type from RL controller name
+                model_type = controller_name.replace('rl_', '')
+                rl_controller = create_rl_controller(args.ch, model_type)
+                rl_controllers[controller_name] = rl_controller
+                print(f"RL controller initialized: ch{args.ch}_{model_type}")
+            except Exception as e:
+                print(f"Failed to initialize RL controller {controller_name}: {e}")
+                print(f"Removing {controller_name} from test list")
+                controllers_to_remove.append(controller_name)
+    
+    # Remove failed RL controllers from the list
+    for controller_name in controllers_to_remove:
+        controllers.remove(controller_name)
     
     # Store all results
     from datetime import datetime
@@ -982,25 +1000,53 @@ def run_polygon_grid_experiment(args, rtde_help, search_help, P_help, targetPWM_
                 # Run experiments on this polygon
                 polygon_result = run_single_polygon_experiment(
                     args, rtde_help, search_help, P_help, targetPWM_Pub,
-                    dataLoggerEnable, controller_file_help, rl_controller,
+                    dataLoggerEnable, controller_file_help, rl_controllers,
                     row, col, controller_name
                 )
                 
                 controller_results['polygons'][polygon_key] = polygon_result
                 
-                # Move to higher position and turn off vacuum before next polygon (except for the last one)
-                if not (row == 2 and col == 3):  # Not the last polygon
-                    print(f"  Moving to higher position and turning off vacuum...")
-                    # Turn off vacuum
-                    targetPWM_Pub.publish(0)
-                    rospy.sleep(0.2)
+                # Move to higher position and turn off vacuum before next polygon
+                print(f"  Moving to higher position and turning off vacuum...")
+                # Turn off vacuum
+                targetPWM_Pub.publish(0)
+                rospy.sleep(0.2)
 
-                    # Get current position and move 5mm higher
+                if not (row == 2 and col == 3):  # Not the last polygon
+                    # Get current position and move 10mm higher
                     current_pose = rtde_help.getCurrentPose()
                     high_pose = copy.deepcopy(current_pose)
-                    high_pose.pose.position.z = current_pose.pose.position.z + 10e-3  # 5mm higher
+                    high_pose.pose.position.z = current_pose.pose.position.z + 10e-3  # 10mm higher
                     rtde_help.goToPose(high_pose)
                     rospy.sleep(0.5)  # Brief pause at higher position
+                else:
+                    # Last polygon (2,3) - move to higher position and return to (0,0)
+                    print(f"  Last polygon completed - moving to higher position and returning to (0,0)...")
+                    current_pose = rtde_help.getCurrentPose()
+                    high_pose = copy.deepcopy(current_pose)
+                    high_pose.pose.position.z = current_pose.pose.position.z + 20e-3  # 20mm higher
+                    rtde_help.goToPose(high_pose)
+                    rospy.sleep(0.5)
+                    
+                    # Return to polygon (0,0) position
+                    base_disengage_position = get_disEngagePosition('polygons')
+                    polygon_position = get_polygon_position(0, 0, base_disengage_position)
+                    
+                    # Set default yaw angle based on channel
+                    if args.ch == 3:
+                        default_yaw = pi/2 - 60*pi/180
+                    elif args.ch == 4:
+                        default_yaw = pi/2 - 45*pi/180
+                    elif args.ch == 5:
+                        default_yaw = pi/2 - 90*pi/180
+                    elif args.ch == 6:
+                        default_yaw = pi/2 - 60*pi/180
+                    
+                    setOrientation = tf.transformations.quaternion_from_euler(default_yaw, pi, 0, 'szxy')
+                    return_pose = rtde_help.getPoseObj(polygon_position, setOrientation)
+                    rtde_help.goToPose(return_pose)
+                    rospy.sleep(1.0)
+                    print(f"  Returned to polygon (0,0) position")
                     
                     
         
