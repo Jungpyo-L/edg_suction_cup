@@ -242,10 +242,10 @@ def run_multi_controller_yaw_sweep(args, rtde_help, search_help, P_help, targetP
     controller_folder_name = f"{current_primitives}_ch{args.ch}_{controller_name}"
     print(f"Creating folder: {controller_folder_name}")
     
-    # Create a new file_help instance with controller-specific folder
-    controller_file_help = fileSaveHelp(savingFolderName=controller_folder_name)
+    # Create a new file_help instance with default folder name
+    controller_file_help = fileSaveHelp()
     
-    # Modify the ResultSavingDirectory to include date folder first
+    # Modify the ResultSavingDirectory to include controller-specific folder
     from datetime import datetime
     date_folder = datetime.now().strftime("%y%m%d")
     base_folder = os.path.expanduser('~') + '/SuctionExperiment'
