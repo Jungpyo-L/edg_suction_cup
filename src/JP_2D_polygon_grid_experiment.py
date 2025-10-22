@@ -74,7 +74,7 @@ def get_disEngagePosition(primitives):
         List of [x, y, z] coordinates in meters for the disengage position
     """
     if primitives == 'polygons':
-        disEngagePosition = [0.443, -.038, 0.013]  # Base position for polygon (0,0)
+        disEngagePosition = [0.465, -.190, 0.013]  # Base position for polygon (0,0)
     else:
         # Default fallback for unknown primitives
         print(f"Warning: Unknown primitives '{primitives}', using polygon position")
@@ -95,6 +95,32 @@ def convert_yawAngle(yaw_radian):
     yaw_angle = yaw_radian*180/pi
     yaw_angle = -yaw_angle - 90
     return yaw_angle
+
+
+def get_matching_heuristic_controller(rl_controller_name):
+    """
+    Get the matching heuristic controller for a given RL controller.
+    
+    Args:
+        rl_controller_name: Name of the RL controller (e.g., 'rl_hyaw_momentum')
+    
+    Returns:
+        String name of the matching heuristic controller
+    """
+    # Remove 'rl_' prefix and 'h' prefix to get the base controller type
+    base_name = rl_controller_name.replace('rl_', '').replace('h', '')
+    
+    # Map RL controller names to heuristic controller names
+    controller_mapping = {
+        'greedy': 'greedy',
+        'yaw': 'yaw', 
+        'momentum': 'momentum',
+        'yaw_momentum': 'yaw_momentum',
+        'momentum_yaw': 'yaw_momentum'
+    }
+    
+    # Return the matching heuristic controller, default to 'greedy' if not found
+    return controller_mapping.get(base_name, 'greedy')
 
 
 def run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub, 
@@ -196,6 +222,7 @@ def run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub,
                 print(f"Suction engage succeeded with controller {args.controller} at iteration {iteration_count}")
             rtde_help.stopAtCurrPoseAdaptive()
             rospy.sleep(1)
+            targetPWM_Pub.publish(DUTYCYCLE_0)
             break
         
         # ===== CHECK FAILURE CONDITION =====
@@ -266,8 +293,10 @@ def run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub,
                 T_align = np.eye(4)
                 
             except Exception as e:
-                print(f"RL controller failed: {e}, falling back to heuristic")
-                T_later, T_yaw, T_align = search_help.get_Tmats_from_controller(P_array, "greedy")
+                print(f"RL controller failed: {e}, falling back to matching heuristic")
+                # Use matching heuristic controller based on RL controller type
+                heuristic_controller = get_matching_heuristic_controller(args.controller)
+                T_later, T_yaw, T_align = search_help.get_Tmats_from_controller(P_array, heuristic_controller)
         else:
             # HEURISTIC CONTROL
             T_later, T_yaw, T_align = search_help.get_Tmats_from_controller(P_array, args.controller)
@@ -370,8 +399,8 @@ def get_polygon_position(polygon_row, polygon_col, base_disengage_position):
     Returns:
         List of [x, y, z] coordinates for the specified polygon
     """
-    # Each polygon is 5mm apart
-    polygon_spacing = 5e-3  # 5mm in meters
+    # Each polygon is 50mm apart
+    polygon_spacing = 50e-3  # 50mm in meters
     
     # Calculate offset from base position
     x_offset = polygon_col * polygon_spacing
@@ -387,14 +416,14 @@ def get_polygon_position(polygon_row, polygon_col, base_disengage_position):
     return polygon_position
 
 
-def generate_random_initial_pose(disengage_pose, min_distance=1.5e-2, max_distance=2.5e-2):
+def generate_random_initial_pose(disengage_pose, min_distance=1.0e-2, max_distance=2.0e-2):
     """
     Generate a random initial pose within the specified distance range from disengagePose.
     
     Args:
         disengage_pose: Base disengage pose
-        min_distance: Minimum distance from disengagePose (default: 1.5cm)
-        max_distance: Maximum distance from disengagePose (default: 2.5cm)
+        min_distance: Minimum distance from disengagePose (default: 1.0cm)
+        max_distance: Maximum distance from disengagePose (default: 2.0cm)
     
     Returns:
         PoseStamped object with random position and orientation
@@ -460,8 +489,9 @@ def check_polygon_boundary(current_pose, polygon_disengage_pose, boundary_limit=
 def validate_trial_start(rtde_help, P_help, search_help, targetPWM_Pub, dataLoggerEnable, 
                         initial_pose, max_validation_attempts=5):
     """
-    Validate that the initial position doesn't immediately achieve suction.
-    If suction is achieved, generate a new random position.
+    Validate that the initial position doesn't immediately achieve suction and has sufficient pressure gradient.
+    If suction is achieved immediately OR there's no pressure gradient (all chambers < 15 Pa difference), 
+    generate a new random position.
     
     Args:
         rtde_help: RTDE helper for robot control
@@ -478,35 +508,56 @@ def validate_trial_start(rtde_help, P_help, search_help, targetPWM_Pub, dataLogg
     P_vac = search_help.P_vac
     DUTYCYCLE_100 = 100
     DUTYCYCLE_0 = 0
+    PRESSURE_GRADIENT_THRESHOLD = 15  # Pa - minimum pressure difference between chambers
     
     for attempt in range(max_validation_attempts):
         # Move to the initial pose
         rtde_help.goToPose(initial_pose)
         rospy.sleep(0.5)  # Allow robot to settle
         
-        # Start vacuum and check pressure
+        # Start vacuum and data logging
         targetPWM_Pub.publish(DUTYCYCLE_100)
         P_help.startSampling()
         rospy.sleep(0.5)
         P_help.setNowAsOffset()
         dataLoggerEnable(True)
         
-        # Check if suction is immediately achieved
+        # Move down to engage position (5mm below disengage) to check pressure properly
+        engage_position = copy.deepcopy(initial_pose.pose.position)
+        engage_position.z = engage_position.z - 5e-3
+        engage_pose = rtde_help.getPoseObj(engage_position, initial_pose.pose.orientation)
+        rtde_help.goToPose_2Dhaptic(engage_pose)
+        rospy.sleep(0.5)  # Allow pressure to stabilize
+        
+        # Check pressure conditions at engage position
         P_array = P_help.four_pressure
         reached_vacuum = all(np.array(P_array) < P_vac)
+        
+        # Check for null gradient (all chambers have similar pressure - less than 15 Pa difference)
+        pressure_range = max(P_array) - min(P_array)
+        has_null_gradient = pressure_range < PRESSURE_GRADIENT_THRESHOLD
+        
+        # Move back to disengage position
+        rtde_help.goToPose(initial_pose)
+        rospy.sleep(0.2)
         
         # Stop vacuum and data logging
         dataLoggerEnable(False)
         P_help.stopSampling()
         targetPWM_Pub.publish(DUTYCYCLE_0)
         
-        if not reached_vacuum:
-            # Valid starting position - no immediate suction
+        if not reached_vacuum and not has_null_gradient:
+            # Valid starting position - no immediate suction and sufficient pressure gradient
             print(f"  Validation successful after {attempt + 1} attempts")
+            print(f"    Pressure range: {pressure_range:.1f} Pa (threshold: {PRESSURE_GRADIENT_THRESHOLD} Pa)")
             return initial_pose, attempt + 1
         else:
-            # Immediate suction - generate new position
-            print(f"  Validation attempt {attempt + 1}: Immediate suction detected, generating new position...")
+            # Invalid starting position - either immediate suction or null gradient
+            if reached_vacuum:
+                print(f"  Validation attempt {attempt + 1}: Immediate suction detected, generating new position...")
+            elif has_null_gradient:
+                print(f"  Validation attempt {attempt + 1}: Null gradient detected (range: {pressure_range:.1f} Pa < {PRESSURE_GRADIENT_THRESHOLD} Pa), generating new position...")
+            
             base_disengage_position = get_disEngagePosition('polygons')
             new_pose, new_yaw = generate_random_initial_pose(initial_pose)
             initial_pose = new_pose
@@ -514,6 +565,67 @@ def validate_trial_start(rtde_help, P_help, search_help, targetPWM_Pub, dataLogg
     # If all attempts failed, return the last generated pose
     print(f"  Warning: Could not find valid starting position after {max_validation_attempts} attempts")
     return initial_pose, max_validation_attempts
+
+
+def test_polygon_position(args, rtde_help, polygon_row, polygon_col):
+    """
+    Test the position of a polygon by moving the robot arm to it.
+    This mode is for visual testing of polygon locations - no vacuum, no data saved.
+    
+    Args:
+        args: Command line arguments
+        rtde_help: RTDE helper for robot control
+        polygon_row: Row index of the polygon (0, 1, 2)
+        polygon_col: Column index of the polygon (0, 1, 2, 3)
+    
+    Returns:
+        None (visual test only, no data saved)
+    """
+    print(f"\n--- Position Test for Polygon ({polygon_row},{polygon_col}) ---")
+    
+    # Get base disengage position for polygons
+    base_disengage_position = get_disEngagePosition('polygons')
+    
+    # Calculate polygon position
+    polygon_position = get_polygon_position(polygon_row, polygon_col, base_disengage_position)
+    
+    # Set default yaw angle based on channel
+    if args.ch == 3:
+        default_yaw = pi/2 - 60*pi/180
+    elif args.ch == 4:
+        default_yaw = pi/2 - 45*pi/180
+    elif args.ch == 5:
+        default_yaw = pi/2 - 90*pi/180
+    elif args.ch == 6:
+        default_yaw = pi/2 - 60*pi/180
+    
+    setOrientation = tf.transformations.quaternion_from_euler(default_yaw, pi, 0, 'szxy')
+    polygon_disengage_pose = rtde_help.getPoseObj(polygon_position, setOrientation)
+    
+    # Move to polygon disengage position
+    print(f"Moving to polygon ({polygon_row},{polygon_col}) position...")
+    print(f"  Position: X={polygon_position[0]*1000:.1f}mm, Y={polygon_position[1]*1000:.1f}mm, Z={polygon_position[2]*1000:.1f}mm")
+    rtde_help.goToPose(polygon_disengage_pose)
+    rospy.sleep(1.0)
+    
+    # Move down to engage position (5mm below disengage) for visual inspection
+    engage_position = copy.deepcopy(polygon_disengage_pose.pose.position)
+    engage_position.z = engage_position.z - 5e-3
+    engage_pose = rtde_help.getPoseObj(engage_position, polygon_disengage_pose.pose.orientation)
+    rtde_help.goToPose_2Dhaptic(engage_pose)
+    
+    # Hold position for 2 seconds for visual inspection
+    print(f"  Holding position for 2 seconds for visual inspection...")
+    rospy.sleep(2.0)
+    
+    # Move back to disengage position
+    rtde_help.goToPose(polygon_disengage_pose)
+    rospy.sleep(0.5)
+    
+    # Display completion message
+    print(f"  Position test completed for polygon ({polygon_row},{polygon_col})")
+    
+    return None
 
 
 def run_single_polygon_experiment(args, rtde_help, search_help, P_help, targetPWM_Pub,
@@ -546,7 +658,7 @@ def run_single_polygon_experiment(args, rtde_help, search_help, P_help, targetPW
     
     print(f"\n--- Polygon ({polygon_row},{polygon_col}) - {controller_name} controller ---")
     if args.debug_mode:
-        print(f"  DEBUG MODE: Running only {num_trials} trial per polygon")
+        print(f"  DEBUG MODE: Running only {num_trials} trial per polygon (full haptic search)")
     
     # Get base disengage position for polygons
     base_disengage_position = get_disEngagePosition('polygons')
@@ -657,7 +769,7 @@ def run_single_polygon_experiment(args, rtde_help, search_help, P_help, targetPW
         
         # Brief pause between trials
         if trial_num < num_trials:
-            rospy.sleep(args.pause_time)
+            rospy.sleep(0.2)  # Fixed pause time
     
     # Calculate summary statistics for this polygon
     successful_trials = [t for t in polygon_results['trials'] if t['success']]
@@ -686,9 +798,105 @@ def run_single_polygon_experiment(args, rtde_help, search_help, P_help, targetPW
     return polygon_results
 
 
+def run_polygon_visual_test(args, rtde_help):
+    """
+    Run visual tests for all polygons in the grid.
+    
+    This function tests the position of each polygon by moving the robot arm to it.
+    This is for visual inspection only - no vacuum, no data saved.
+    Robot moves 5mm higher when transitioning between polygons for clearance.
+    
+    Press Ctrl+C at any time to stop the test.
+    
+    Args:
+        args: Command line arguments
+        rtde_help: RTDE helper for robot control
+    
+    Returns:
+        None (visual test only, no data saved)
+    """
+    print(f"Starting polygon position test")
+    print(f"Polygons: 3x4 grid (12 total)")
+    print(f"Chambers per polygon: {args.ch}")
+    print("This is a visual test only - no vacuum, no data will be saved")
+    print("Robot will move 5mm higher between polygons for clearance")
+    print("Press Ctrl+C at any time to stop the test")
+    print("=" * 60)
+    
+    try:
+        # Test each polygon
+        for row in range(3):
+            for col in range(4):
+                polygon_key = f"polygon_{row}_{col}"
+                print(f"\n--- Testing {polygon_key} ---")
+                
+                # Run position test on this polygon
+                test_polygon_position(args, rtde_help, row, col)
+                
+                # Move to higher position before going to next polygon (except for the last one)
+                if not (row == 2 and col == 3):  # Not the last polygon
+                    print(f"  Moving to higher position for clearance...")
+                    # Get current position and move 5mm higher
+                    current_pose = rtde_help.getCurrentPose()
+                    high_pose = copy.deepcopy(current_pose)
+                    high_pose.pose.position.z = current_pose.pose.position.z + 5e-3  # 5mm higher
+                    rtde_help.goToPose(high_pose)
+                    rospy.sleep(0.5)  # Brief pause at higher position
+        
+        # Return to polygon (0,0) after completing all tests
+        print(f"\n--- Returning to polygon (0,0) ---")
+        
+        # Move to higher position first (10mm higher than current position)
+        print(f"  Moving to higher position (10mm) for safe return...")
+        current_pose = rtde_help.getCurrentPose()
+        high_pose = copy.deepcopy(current_pose)
+        high_pose.pose.position.z = current_pose.pose.position.z + 10e-3  # 10mm higher
+        rtde_help.goToPose(high_pose)
+        rospy.sleep(0.5)
+        
+        # Move to polygon (0,0) position
+        print(f"  Moving to polygon (0,0) position...")
+        base_disengage_position = get_disEngagePosition('polygons')
+        polygon_position = get_polygon_position(0, 0, base_disengage_position)
+        
+        # Set default yaw angle based on channel
+        if args.ch == 3:
+            default_yaw = pi/2 - 60*pi/180
+        elif args.ch == 4:
+            default_yaw = pi/2 - 45*pi/180
+        elif args.ch == 5:
+            default_yaw = pi/2 - 90*pi/180
+        elif args.ch == 6:
+            default_yaw = pi/2 - 60*pi/180
+        
+        setOrientation = tf.transformations.quaternion_from_euler(default_yaw, pi, 0, 'szxy')
+        return_pose = rtde_help.getPoseObj(polygon_position, setOrientation)
+        rtde_help.goToPose(return_pose)
+        rospy.sleep(1.0)
+        
+        print(f"  Returned to polygon (0,0) position")
+        print(f"  Position: X={polygon_position[0]*1000:.1f}mm, Y={polygon_position[1]*1000:.1f}mm, Z={polygon_position[2]*1000:.1f}mm")
+        
+        print(f"\n{'='*60}")
+        print("POLYGON POSITION TEST COMPLETED!")
+        print(f"{'='*60}")
+        print("All 12 polygons have been tested visually.")
+        print("Robot has returned to polygon (0,0) position.")
+        print("No vacuum was used - this was a position inspection only.")
+        
+    except KeyboardInterrupt:
+        print(f"\n\n{'='*60}")
+        print("POLYGON POSITION TEST INTERRUPTED BY USER!")
+        print(f"{'='*60}")
+        print("Test stopped by Ctrl+C. Robot will remain at current position.")
+        print("You can restart the test anytime.")
+        
+    return None
+
+
 def run_polygon_grid_experiment(args, rtde_help, search_help, P_help, targetPWM_Pub,
                                dataLoggerEnable, file_help, rl_controller, 
-                               controllers=['greedy', 'rl_yaw_momentum']):
+                               controllers=['greedy', 'rl_hyaw_momentum']):
     """
     Run complete polygon grid experiment with multiple controllers.
     
@@ -701,7 +909,7 @@ def run_polygon_grid_experiment(args, rtde_help, search_help, P_help, targetPWM_
         dataLoggerEnable: ROS service proxy for enabling/disabling data logging
         file_help: Helper for saving experiment data
         rl_controller: RL controller object
-        controllers: List of controllers to test (default: ['greedy', 'rl_yaw_momentum'])
+        controllers: List of controllers to test (default: ['greedy', 'rl_hyaw_momentum'])
     
     Returns:
         Dictionary containing complete experiment results
@@ -712,20 +920,21 @@ def run_polygon_grid_experiment(args, rtde_help, search_help, P_help, targetPWM_
     trials_per_polygon = 1 if args.debug_mode else 10
     print(f"Trials per polygon: {trials_per_polygon}")
     if args.debug_mode:
-        print(f"DEBUG MODE ENABLED: Fast testing with 1 trial per polygon")
+        print(f"DEBUG MODE ENABLED: Fast testing with 1 trial per polygon (full haptic search still performed)")
     print("=" * 60)
     
     # Initialize RL controller if needed
-    if 'rl_yaw_momentum' in controllers:
+    if 'rl_hyaw_momentum' in controllers:
         try:
-            rl_controller = create_rl_controller(args.ch, 'yaw_momentum')
-            print(f"RL controller initialized: ch{args.ch}_yaw_momentum")
+            rl_controller = create_rl_controller(args.ch, 'hyaw_momentum')  # Use 'h' prefix
+            print(f"RL controller initialized: ch{args.ch}_hyaw_momentum")
         except Exception as e:
             print(f"Failed to initialize RL controller: {e}")
             print("Removing RL controller from test list")
             controllers = [c for c in controllers if not c.startswith('rl_')]
     
     # Store all results
+    from datetime import datetime
     all_results = {
         'experiment_info': {
             'start_time': datetime.now().isoformat(),
@@ -778,6 +987,22 @@ def run_polygon_grid_experiment(args, rtde_help, search_help, P_help, targetPWM_
                 )
                 
                 controller_results['polygons'][polygon_key] = polygon_result
+                
+                # Move to higher position and turn off vacuum before next polygon (except for the last one)
+                if not (row == 2 and col == 3):  # Not the last polygon
+                    print(f"  Moving to higher position and turning off vacuum...")
+                    # Turn off vacuum
+                    targetPWM_Pub.publish(0)
+                    rospy.sleep(0.2)
+
+                    # Get current position and move 5mm higher
+                    current_pose = rtde_help.getCurrentPose()
+                    high_pose = copy.deepcopy(current_pose)
+                    high_pose.pose.position.z = current_pose.pose.position.z + 5e-3  # 5mm higher
+                    rtde_help.goToPose(high_pose)
+                    rospy.sleep(0.5)  # Brief pause at higher position
+                    
+                    
         
         # Calculate overall statistics for this controller
         all_polygon_trials = []
@@ -896,15 +1121,20 @@ def main(args):
     file_help.clearTmpFolder()
     
     try:
-        input("Press <Enter> to start polygon grid experiment")
+        input("Press <Enter> to start polygon experiment")
         
-        # Run polygon grid experiment
-        results = run_polygon_grid_experiment(
-            args, rtde_help, search_help, P_help, targetPWM_Pub,
-            dataLoggerEnable, file_help, None, args.controllers
-        )
-        
-        print("Polygon grid experiment completed successfully!")
+        if args.initial_contact_mode:
+            # Run visual test mode
+            print("Running visual test mode...")
+            run_polygon_visual_test(args, rtde_help)
+            print("Polygon visual test completed successfully!")
+        else:
+            # Run polygon grid experiment
+            results = run_polygon_grid_experiment(
+                args, rtde_help, search_help, P_help, targetPWM_Pub,
+                dataLoggerEnable, file_help, None, args.controllers
+            )
+            print("Polygon grid experiment completed successfully!")
         
     except rospy.ROSInterruptException:
         targetPWM_Pub.publish(0)
@@ -919,12 +1149,17 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Polygon Grid Experiment for 2D Haptic Search')
     parser.add_argument('--ch', type=int, help='number of channels', default=4)
     parser.add_argument('--controllers', nargs='+', help='controllers to test', 
-                       default=['greedy', 'rl_yaw_momentum'])
+                       default=['greedy', 'rl_hyaw_momentum'])
     parser.add_argument('--max_iterations', type=int, help='maximum iterations per trial', default=50)
     parser.add_argument('--reverse', type=bool, help='use reverse airflow', default=False)
-    parser.add_argument('--pause_time', type=float, help='pause time between trials', default=0.2)
     parser.add_argument('--debug_mode', action='store_true', 
-                       help='debug mode: run only 1 trial per polygon instead of 10 (faster for testing)')
+                       help='debug mode: run only 1 trial per polygon instead of 10 (still performs full haptic search)')
+    parser.add_argument('--initial_contact_mode', action='store_true', 
+                       help='visual test mode: test each polygon position by moving robot arm (no vacuum, no data saved)')
+    parser.add_argument('--pause_time', type=float, help='pause time between experiments in seconds (default: 0.5s, try 0.2s for faster)', 
+                      default=0.2)
+    parser.add_argument('--hop_sleep', type=float, help='sleep time after hopping down in seconds (default: 0.08s, try 0.05s for faster)', 
+                      default=0.15)
     
     args = parser.parse_args()
     

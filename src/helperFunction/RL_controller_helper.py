@@ -24,16 +24,26 @@ except ImportError as e:
     rospy.logwarn(f"Could not import PPO from stable_baselines3: {e}")
     rl_available = False
 
-def calculate_unit_vectors(self, num_chambers, yaw_angle):
+def calculate_unit_vectors(num_chambers):
     """
     Calculate the unit vectors for the suction cup.
     Note that depending on the number of chambers, the unit vectors could be different. Please check the endeffector.
     """
-    return [np.array([np.cos(2 * np.pi / (num_chambers * 2) + 2 * np.pi * i / num_chambers),
-                    np.sin(2 * np.pi / (num_chambers * 2) + 2 * np.pi * i / num_chambers)])
-        for i in range(num_chambers)]
+    if num_chambers == 3:
+        first_chamber_angle = - np.pi / 3
+    elif num_chambers == 4:
+        first_chamber_angle = - np.pi / 4
+    elif num_chambers == 5:
+        first_chamber_angle = - np.pi / 2
+    elif num_chambers == 6:
+        first_chamber_angle = - np.pi / 3
+    else:
+        raise ValueError("Number of chambers is not supported")
+    return [np.array([np.cos(first_chamber_angle + 2 * np.pi * i / num_chambers),
+                    np.sin(first_chamber_angle + 2 * np.pi * i / num_chambers)])
+            for i in range(num_chambers)]
 
-def calculate_direction_vector(self, unit_vectors, vacuum_pressures):
+def calculate_direction_vector(unit_vectors, vacuum_pressures):
     direction_vector = np.sum([vp * uv for vp, uv in zip(vacuum_pressures, unit_vectors)], axis=0)
     return direction_vector / np.linalg.norm(direction_vector) if np.linalg.norm(direction_vector) > 0 else np.array([0, 0])
 
@@ -48,7 +58,7 @@ class HeuristicController:
         self.velocity = np.array([0.0, 0.0])  # for momentum mode
 
     def compute_action(self, vacuum_pressures):
-        unit_vectors = calculate_unit_vectors(self.num_chambers, self.rotation_angle)
+        unit_vectors = calculate_unit_vectors(self.num_chambers)
         direction = calculate_direction_vector(unit_vectors, vacuum_pressures)
 
         if self.mode == "greedy":
