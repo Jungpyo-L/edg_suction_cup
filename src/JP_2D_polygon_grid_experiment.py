@@ -926,7 +926,7 @@ def run_polygon_grid_experiment(args, rtde_help, search_help, P_help, targetPWM_
     # Initialize RL controller if needed
     if 'rl_hyaw_momentum' in controllers:
         try:
-            rl_controller = create_rl_controller(args.ch, 'hyaw_momentum')  # Use 'h' prefix
+            rl_controller = create_rl_controller(args.ch, 'hyaw_momentum')
             print(f"RL controller initialized: ch{args.ch}_hyaw_momentum")
         except Exception as e:
             print(f"Failed to initialize RL controller: {e}")
@@ -998,7 +998,7 @@ def run_polygon_grid_experiment(args, rtde_help, search_help, P_help, targetPWM_
                     # Get current position and move 5mm higher
                     current_pose = rtde_help.getCurrentPose()
                     high_pose = copy.deepcopy(current_pose)
-                    high_pose.pose.position.z = current_pose.pose.position.z + 5e-3  # 5mm higher
+                    high_pose.pose.position.z = current_pose.pose.position.z + 10e-3  # 5mm higher
                     rtde_help.goToPose(high_pose)
                     rospy.sleep(0.5)  # Brief pause at higher position
                     
