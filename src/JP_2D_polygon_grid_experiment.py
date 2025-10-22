@@ -714,6 +714,14 @@ def run_single_polygon_experiment(args, rtde_help, search_help, P_help, targetPW
         # Generate random initial pose
         random_pose, random_yaw = generate_random_initial_pose(polygon_disengage_pose)
         
+        # Move to higher position before going to random pose
+        print(f"    Moving to higher position before trial {trial_num}...")
+        current_pose = rtde_help.getCurrentPose()
+        high_pose = copy.deepcopy(current_pose)
+        high_pose.pose.position.z = current_pose.pose.position.z + 5e-3  # 5mm higher
+        rtde_help.goToPose(high_pose)
+        rospy.sleep(0.3)  # Brief pause at higher position
+        
         # Validate trial start (ensure no immediate suction)
         validated_pose, validation_attempts = validate_trial_start(
             rtde_help, P_help, search_help, targetPWM_Pub, dataLoggerEnable, random_pose
