@@ -97,6 +97,54 @@ def convert_yawAngle(yaw_radian):
     return yaw_angle
 
 
+def normalize_yaw_angle(yaw_degrees):
+    """
+    Normalize yaw angle to [-180, 180] degrees range.
+    
+    Args:
+        yaw_degrees: Yaw angle in degrees
+    
+    Returns:
+        Normalized yaw angle in [-180, 180] degrees
+    """
+    while yaw_degrees > 180:
+        yaw_degrees -= 360
+    while yaw_degrees < -180:
+        yaw_degrees += 360
+    return yaw_degrees
+
+
+def get_reverse_yaw_rotation(initial_yaw, current_yaw):
+    """
+    Calculate the reverse rotation to return to initial yaw from current yaw.
+    This reverses the rotation that happened during haptic search.
+    
+    Args:
+        initial_yaw: Initial yaw angle before haptic search (degrees)
+        current_yaw: Current yaw angle after haptic search (degrees)
+    
+    Returns:
+        Reverse rotation angle in degrees (opposite of haptic search rotation)
+    """
+    # Normalize both angles to [-180, 180]
+    initial_yaw = normalize_yaw_angle(initial_yaw)
+    current_yaw = normalize_yaw_angle(current_yaw)
+    
+    # Calculate the rotation that happened during haptic search
+    haptic_rotation = current_yaw - initial_yaw
+    
+    # Handle 360-degree boundary crossing
+    if haptic_rotation > 180:
+        haptic_rotation -= 360
+    elif haptic_rotation < -180:
+        haptic_rotation += 360
+    
+    # Return the reverse rotation (opposite direction)
+    reverse_rotation = -haptic_rotation
+    
+    return reverse_rotation
+
+
 def get_matching_heuristic_controller(rl_controller_name):
     """
     Get the matching heuristic controller for a given RL controller.
@@ -561,13 +609,14 @@ def validate_trial_start(rtde_help, P_help, search_help, targetPWM_Pub, dataLogg
         else:
             # Invalid starting position - either immediate suction or null gradient
             if reached_vacuum:
-                print(f"  Validation attempt {attempt + 1}: Immediate suction detected, generating new position...")
+                print(f"  Validation attempt {attempt + 1}: Immediate suction detected")
             elif has_null_gradient:
-                print(f"  Validation attempt {attempt + 1}: Null gradient detected (range: {pressure_range:.1f} Pa < {PRESSURE_GRADIENT_THRESHOLD} Pa), generating new position...")
+                print(f"  Validation attempt {attempt + 1}: Null gradient detected (range: {pressure_range:.1f} Pa < {PRESSURE_GRADIENT_THRESHOLD} Pa)")
             
-            base_disengage_position = get_disEngagePosition('polygons')
-            new_pose, new_yaw = generate_random_initial_pose(initial_pose)
-            initial_pose = new_pose
+            # Return None to indicate validation failed - caller will handle retry
+            if attempt == max_validation_attempts - 1:
+                print(f"  Validation failed after {max_validation_attempts} attempts")
+                return None, max_validation_attempts
     
     # If all attempts failed, return the last generated pose
     print(f"  Warning: Could not find valid starting position after {max_validation_attempts} attempts")
@@ -711,21 +760,56 @@ def run_single_polygon_experiment(args, rtde_help, search_help, P_help, targetPW
     for trial_num in range(1, num_trials + 1):
         print(f"  Trial {trial_num}/{num_trials}")
         
-        # Generate random initial pose
+        # Generate random initial pose based on polygon default position
         random_pose, random_yaw = generate_random_initial_pose(polygon_disengage_pose)
         
-        # Move to higher position before going to random pose
-        print(f"    Moving to higher position before trial {trial_num}...")
-        current_pose = rtde_help.getCurrentPose()
-        high_pose = copy.deepcopy(current_pose)
-        high_pose.pose.position.z = current_pose.pose.position.z + 5e-3  # 5mm higher
-        rtde_help.goToPose(high_pose)
-        rospy.sleep(0.3)  # Brief pause at higher position
+        # Store initial yaw for reverse rotation calculation
+        initial_yaw = convert_yawAngle(search_help.get_yawRotation_from_T(search_help.get_Tmat_from_Pose(random_pose)))
         
-        # Validate trial start (ensure no immediate suction)
-        validated_pose, validation_attempts = validate_trial_start(
-            rtde_help, P_help, search_help, targetPWM_Pub, dataLoggerEnable, random_pose
-        )
+        # Validation loop - keep trying until we get a valid starting position
+        validation_successful = False
+        validation_attempts = 0
+        max_validation_attempts = 5
+        
+        while not validation_successful and validation_attempts < max_validation_attempts:
+            validation_attempts += 1
+            print(f"    Validation attempt {validation_attempts}/{max_validation_attempts} for trial {trial_num}...")
+            
+            # Move to higher position before going to random pose
+            print(f"      Moving to higher position...")
+            current_pose = rtde_help.getCurrentPose()
+            high_pose = copy.deepcopy(current_pose)
+            high_pose.pose.position.z = current_pose.pose.position.z + 5e-3  # 5mm higher
+            rtde_help.goToPose(high_pose)
+            rospy.sleep(0.3)  # Brief pause at higher position
+            
+            # Move to random pose (elevated)
+            print(f"      Moving to random pose (elevated)...")
+            random_pose_elevated = copy.deepcopy(random_pose)
+            random_pose_elevated.pose.position.z = high_pose.pose.position.z  # Keep elevated
+            rtde_help.goToPose(random_pose_elevated)
+            rospy.sleep(0.5)
+            
+            # Lower to random pose and validate trial start (ensure no immediate suction)
+            print(f"      Lowering to random pose for validation...")
+            validated_pose, validation_attempts_inner = validate_trial_start(
+                rtde_help, P_help, search_help, targetPWM_Pub, dataLoggerEnable, random_pose
+            )
+            
+            if validated_pose is not None:
+                # Validation successful
+                validation_successful = True
+                print(f"      Validation successful after {validation_attempts} attempts")
+            else:
+                # Validation failed - generate new random pose
+                print(f"      Validation failed, generating new random pose...")
+                random_pose, random_yaw = generate_random_initial_pose(polygon_disengage_pose)
+                # Update initial_yaw for the new random pose
+                initial_yaw = convert_yawAngle(search_help.get_yawRotation_from_T(search_help.get_Tmat_from_Pose(random_pose)))
+        
+        if not validation_successful:
+            print(f"    Warning: Could not find valid starting position after {max_validation_attempts} attempts, using last generated pose")
+            validated_pose = random_pose
         
         # Update args for this trial
         args.controller = controller_name
@@ -737,6 +821,42 @@ def run_single_polygon_experiment(args, rtde_help, search_help, P_help, targetPW
             dataLoggerEnable, file_help, validated_pose, rl_controllers_dict,
             experiment_num=trial_num, random_yaw=random_yaw
         )
+        
+        # Return to polygon default position after each trial (except for the last trial)
+        if trial_num < num_trials:
+            print(f"    Returning to polygon default position after trial {trial_num}...")
+            
+            # Step 1: Move to higher position first
+            current_pose = rtde_help.getCurrentPose()
+            high_pose = copy.deepcopy(current_pose)
+            high_pose.pose.position.z = current_pose.pose.position.z + 5e-3  # 5mm higher
+            rtde_help.goToPose(high_pose)
+            rospy.sleep(0.3)
+            
+            # Step 2: Move to random pose (with current orientation from haptic search) - elevated
+            print(f"    Moving to random pose with current orientation (elevated)...")
+            random_pose_with_current_orientation = copy.deepcopy(random_pose)
+            # Keep the current orientation from haptic search
+            current_orientation = current_pose.pose.orientation
+            random_pose_with_current_orientation.pose.orientation = current_orientation
+            # Keep elevated position (5mm above contact)
+            random_pose_with_current_orientation.pose.position.z = high_pose.pose.position.z
+            rtde_help.goToPose(random_pose_with_current_orientation)
+            rospy.sleep(0.5)
+            
+            # Step 3: Move to default pose (with original random orientation) - elevated
+            print(f"    Moving to default pose with original random orientation (elevated)...")
+            default_pose_elevated = copy.deepcopy(polygon_disengage_pose)
+            default_pose_elevated.pose.position.z = high_pose.pose.position.z  # Keep elevated
+            rtde_help.goToPose(default_pose_elevated)
+            rospy.sleep(0.5)
+            
+            # Step 4: Lower to default position for next trial
+            print(f"    Lowering to default position for next trial...")
+            rtde_help.goToPose(polygon_disengage_pose)
+            rospy.sleep(0.5)  # Allow robot to settle at default position
+            
+            print(f"    Successfully returned to polygon default position")
         
         # Check polygon boundary (3cm limit from initial disengage pose)
         current_pose = rtde_help.getCurrentPose()
