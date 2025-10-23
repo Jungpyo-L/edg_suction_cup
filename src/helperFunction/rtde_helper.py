@@ -60,14 +60,32 @@ class rtdeHelp(object):
         
         Pose.header.frame_id = "base_link"
         Pose.header.stamp = rospy.Time.now()
-        Pose.pose.orientation.x = setOrientation[0]
-        Pose.pose.orientation.y = setOrientation[1]
-        Pose.pose.orientation.z = setOrientation[2]
-        Pose.pose.orientation.w = setOrientation[3]
         
-        Pose.pose.position.x = goalPosition[0]
-        Pose.pose.position.y = goalPosition[1]
-        Pose.pose.position.z = goalPosition[2]
+        # Handle both Quaternion objects and array-like objects
+        if hasattr(setOrientation, 'x'):
+            # It's a Quaternion object
+            Pose.pose.orientation.x = setOrientation.x
+            Pose.pose.orientation.y = setOrientation.y
+            Pose.pose.orientation.z = setOrientation.z
+            Pose.pose.orientation.w = setOrientation.w
+        else:
+            # It's array-like (list, tuple, numpy array)
+            Pose.pose.orientation.x = setOrientation[0]
+            Pose.pose.orientation.y = setOrientation[1]
+            Pose.pose.orientation.z = setOrientation[2]
+            Pose.pose.orientation.w = setOrientation[3]
+        
+        # Handle both Point objects and array-like objects
+        if hasattr(goalPosition, 'x'):
+            # It's a Point object
+            Pose.pose.position.x = goalPosition.x
+            Pose.pose.position.y = goalPosition.y
+            Pose.pose.position.z = goalPosition.z
+        else:
+            # It's array-like (list, tuple, numpy array)
+            Pose.pose.position.x = goalPosition[0]
+            Pose.pose.position.y = goalPosition[1]
+            Pose.pose.position.z = goalPosition[2]
         
         return Pose
     
@@ -94,6 +112,68 @@ class rtdeHelp(object):
         z = pose.pose.position.z
         Rx, Ry, Rz = self.getRotVector(pose)
         return [x, y, z, Rx, Ry, Rz]
+
+    def checkJointLimits(self, joint_positions):
+        """
+        Check if joint positions are within safety limits.
+        
+        Args:
+            joint_positions: List of 6 joint angles in radians
+        
+        Returns:
+            bool: True if joints are within safety limits, False otherwise
+        """
+        return self.rtde_c.isJointsWithinSafetyLimits(joint_positions)
+    
+    def checkPoseSafety(self, pose_vector):
+        """
+        Check if a pose is within safety limits.
+        
+        Args:
+            pose_vector: List of 6 values [x, y, z, rx, ry, rz] in meters and radians
+        
+        Returns:
+            bool: True if pose is within safety limits, False otherwise
+        """
+        return self.rtde_c.isPoseWithinSafetyLimits(pose_vector)
+    
+    def validatePose(self, pose):
+        """
+        Validate if a PoseStamped object is reachable and within safety limits.
+        
+        Args:
+            pose: PoseStamped object to validate
+        
+        Returns:
+            bool: True if pose is valid and reachable, False otherwise
+        """
+        try:
+            # Convert pose to RTDE format [x, y, z, rx, ry, rz]
+            position = [pose.pose.position.x, pose.pose.position.y, pose.pose.position.z]
+            orientation = [pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z, pose.pose.orientation.w]
+            
+            # Convert quaternion to rotation vector
+            r = R.from_quat(orientation)
+            rotvec = r.as_rotvec()
+            
+            # Combine position and rotation vector
+            pose_vector = position + rotvec.tolist()
+            
+            # Check if pose is within safety limits
+            if not self.checkPoseSafety(pose_vector):
+                return False
+            
+            # Check if inverse kinematics exists (joints are reachable)
+            try:
+                joint_positions = self.rtde_c.getInverseKinematics(pose_vector)
+                # Check if joints are within safety limits
+                return self.checkJointLimits(joint_positions)
+            except:
+                return False
+                
+        except Exception as e:
+            print(f"Pose validation error: {e}")
+            return False
     
     def speedl(self, goalPose,speed=0.5, acc=0.5, time=0.5, aRot='a'):
 
