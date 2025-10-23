@@ -48,7 +48,7 @@ def calculate_direction_vector(unit_vectors, vacuum_pressures):
     return direction_vector / np.linalg.norm(direction_vector) if np.linalg.norm(direction_vector) > 0 else np.array([0, 0])
 
 class HeuristicController:
-    def __init__(self, mode, num_chambers, rotation_angle, step_size=0.5, delta_yaw=1.5, damping=0.7):
+    def __init__(self, mode, num_chambers, rotation_angle, step_size=1.0, delta_yaw=1.5, damping=0.7):
         self.mode = mode
         self.step_size = step_size
         self.num_chambers = num_chambers
@@ -103,7 +103,7 @@ class ResidualRLController:
         model_path: str,
         num_chambers: int,
         heuristic_mode: str = "greedy",
-        heuristic_step_size: float = 0.5,
+        heuristic_step_size: float = 1.0,
         heuristic_delta_yaw: float = 1.5,
         heuristic_damping: float = 0.7,
         step_lateral: float = 1.0,
@@ -113,7 +113,7 @@ class ResidualRLController:
         use_yaw_residual: bool | str = "auto",   # allow "auto"
         max_vacuum_pressure: float = 3.1171e4,
         deterministic: bool = True,
-        clip_final_by_step: bool = True,
+        clip_final_by_step: bool = False,
     ):
         # Load model with CPU device and custom objects for compatibility
         import torch
@@ -284,12 +284,12 @@ class ResidualRLController:
         # 7) compose final action
         a_final, a_r_applied = self._compose_final(a_h, a_r_raw)
 
-        # 8) optional final clipping
-        if self.clip_final_by_step:
-            a_final[0] = float(np.clip(a_final[0], -self.step_lateral, self.step_lateral))
-            a_final[1] = float(np.clip(a_final[1], -self.step_lateral, self.step_lateral))
-            if a_final.shape[0] == 3:
-                a_final[2] = float(np.clip(a_final[2], -self.step_yaw, self.step_yaw))
+        # # 8) optional final clipping
+        # if self.clip_final_by_step:
+        #     a_final[0] = float(np.clip(a_final[0], -self.step_lateral, self.step_lateral))
+        #     a_final[1] = float(np.clip(a_final[1], -self.step_lateral, self.step_lateral))
+        #     if a_final.shape[0] == 3:
+        #         a_final[2] = float(np.clip(a_final[2], -self.step_yaw, self.step_yaw))
 
         dx, dy = float(a_final[0]), float(a_final[1])
         dtheta = float(a_final[2]) if a_final.shape[0] == 3 else 0.0
@@ -410,13 +410,13 @@ class RLControllerHelper:
                  num_chambers: int = 4,
                  model_path: Optional[str] = None,
                  heuristic_mode: str = "greedy",
-                 heuristic_step_size: float = 0.5,
+                 heuristic_step_size: float = 1.0,
                  heuristic_delta_yaw: float = 1.0,
-                 heuristic_damping: float = 0.9,
+                 heuristic_damping: float = 0.7,
                  step_lateral: float = 1.0,
                  step_yaw: float = 3.0,
-                 residual_scale_xy: float = 0.5,
-                 residual_scale_yaw: float = 0.5,
+                 residual_scale_xy: float = 1.0,
+                 residual_scale_yaw: float = 1.0,
                  use_yaw_residual: str = "auto",
                  max_vacuum_pressure: float = 3.1171e4,
                  deterministic: bool = True,
@@ -534,7 +534,7 @@ class RLControllerHelper:
                 model_path=model_path,
                 num_chambers=chamber_count,
                 heuristic_mode="greedy" if "greedy" in model_type else "momentum",
-                heuristic_step_size=0.5,
+                heuristic_step_size=1.0,
                 heuristic_delta_yaw=1.0,
                 heuristic_damping=0.7,
                 step_lateral=1.0,
@@ -574,11 +574,19 @@ class RLControllerHelper:
         if self.use_rl and self.rl_controller:
             try:
                 # Use RL controller
-                lateral_vel, yaw_vel = self.rl_controller.compute_action(
-                    vacuum_pressures=vacuum_pressures,
-                    rotation_angle_deg=rotation_angle_deg,
-                    return_debug=return_debug
-                )
+                if return_debug:
+                    lateral_vel, yaw_vel, rl_debug = self.rl_controller.compute_action(
+                        vacuum_pressures=vacuum_pressures,
+                        rotation_angle_deg=rotation_angle_deg,
+                        return_debug=True
+                    )
+                else:
+                    lateral_vel, yaw_vel = self.rl_controller.compute_action(
+                        vacuum_pressures=vacuum_pressures,
+                        rotation_angle_deg=rotation_angle_deg,
+                        return_debug=False
+                    )
+                    rl_debug = {}
                 
                 debug_info = {
                     "controller_type": "RL",
@@ -587,10 +595,7 @@ class RLControllerHelper:
                     "yaw_velocity": yaw_vel,
                 }
                 
-                if return_debug and len(self.rl_controller.compute_action(
-                    vacuum_pressures, rotation_angle_deg, return_debug=True)) == 3:
-                    _, _, rl_debug = self.rl_controller.compute_action(
-                        vacuum_pressures, rotation_angle_deg, return_debug=True)
+                if return_debug:
                     debug_info.update(rl_debug)
                 
                 return lateral_vel, yaw_vel, debug_info

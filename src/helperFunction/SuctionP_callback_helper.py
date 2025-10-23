@@ -102,7 +102,6 @@ class P_CallbackHelp(object):
 
         # buffer_copy now has shape (BufferLen, Psensor_Num)
         self.PressureOffset = np.mean(buffer_copy, axis=0)
-        rospy.loginfo("Pressure offset set to: %s", str(self.PressureOffset))
 
     def callback_P(self, data):
         """
