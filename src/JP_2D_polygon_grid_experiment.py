@@ -75,6 +75,8 @@ def get_disEngagePosition(primitives):
     """
     if primitives == 'polygons':
         disEngagePosition = [0.465, -.190, 0.013]  # Base position for polygon (0,0)
+        if args.difficulty:
+            disEngagePosition = [0.465, -.190 + 225e-3, 0.013]
     else:
         # Default fallback for unknown primitives
         print(f"Warning: Unknown primitives '{primitives}', using polygon position")
@@ -143,6 +145,27 @@ def get_reverse_yaw_rotation(initial_yaw, current_yaw):
     reverse_rotation = -haptic_rotation
     
     return reverse_rotation
+
+
+def process_pressure_data(P_array, search_help):
+    """
+    Apply consistent pressure processing (sign flipping and thresholding) 
+    as used by the greedy controller.
+    
+    Args:
+        P_array: Raw pressure array
+        search_help: hapticSearch2DHelp instance with p_reverse and dP_threshold
+        
+    Returns:
+        Processed pressure array
+    """
+    P_processed = P_array.copy()
+    if not search_help.p_reverse:
+        P_processed = [-P for P in P_processed]
+    # Apply thresholding
+    th = search_help.dP_threshold
+    P_processed = [P if P > th else 0 for P in P_processed]
+    return P_processed
 
 
 def get_matching_heuristic_controller(rl_controller_name):
@@ -263,6 +286,7 @@ def run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub,
         P_array = P_help.four_pressure
         reached_vacuum = all(np.array(P_array) < P_vac)
         
+        
         if reached_vacuum:
             suctionSuccessFlag = True
             args.elapsedTime = time.time() - startTime
@@ -328,12 +352,7 @@ def run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub,
             # RL-BASED CONTROL
             try:
                 # Apply same pressure processing as greedy controller
-                P_processed = P_array.copy()
-                if not search_help.p_reverse:
-                    P_processed = [-P for P in P_processed]
-                # Apply thresholding
-                th = search_help.dP_threshold
-                P_processed = [P if P > th else 0 for P in P_processed]
+                P_processed = process_pressure_data(P_array, search_help)
                 
                 lateral_vel, yaw_vel, debug_info = rl_controller.compute_action(P_processed, yaw_angle, return_debug=True)
                 
@@ -360,10 +379,12 @@ def run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub,
             except Exception as e:
                 print(f"RL controller failed: {e}, falling back to matching heuristic")
                 # Use matching heuristic controller based on RL controller type
+                # Use raw pressure data - heuristic controllers do their own pressure processing
                 heuristic_controller = get_matching_heuristic_controller(args.controller)
                 T_later, T_yaw, T_align = search_help.get_Tmats_from_controller(P_array, heuristic_controller)
         else:
             # HEURISTIC CONTROL
+            # Use raw pressure data - heuristic controllers do their own pressure processing
             # Use proper controller name (convert RL name to heuristic name if needed)
             if args.controller.startswith('rl_'):
                 heuristic_controller = get_matching_heuristic_controller(args.controller)
@@ -501,50 +522,70 @@ def get_polygon_position(polygon_row, polygon_col, base_disengage_position):
     return polygon_position
 
 
-def generate_random_initial_pose(disengage_pose, min_distance=1.0e-2, max_distance=2.0e-2):
+def generate_random_initial_pose(disengage_pose, min_distance=1.0e-2, max_distance=1.9e-2, rtde_help=None, max_attempts=10):
     """
     Generate a random initial pose within the specified distance range from disengagePose.
+    Validates poses to ensure they are reachable and within joint/pose limits.
     
     Args:
         disengage_pose: Base disengage pose
         min_distance: Minimum distance from disengagePose (default: 1.0cm)
         max_distance: Maximum distance from disengagePose (default: 2.0cm)
+        rtde_help: RTDE helper for pose validation (optional)
+        max_attempts: Maximum attempts to generate valid pose (default: 10)
     
     Returns:
-        PoseStamped object with random position and orientation
+        Tuple of (PoseStamped object, random_yaw)
     """
-    # Generate random distance within range
-    distance = np.random.uniform(min_distance, max_distance)
+    for attempt in range(max_attempts):
+        # Generate random distance within range
+        distance = np.random.uniform(min_distance, max_distance)
+        
+        # Generate random angle (0 to 2π)
+        angle = np.random.uniform(0, 2 * np.pi)
+        
+        # Calculate random offset
+        x_offset = distance * np.cos(angle)
+        y_offset = distance * np.sin(angle)
+        
+        # Generate random yaw for orientation
+        random_yaw = np.random.uniform(-180*np.pi/180, 180*np.pi/180)
+        
+        # Create new pose
+        random_pose = copy.deepcopy(disengage_pose)
+        random_pose.pose.position.x += x_offset
+        random_pose.pose.position.y += y_offset
+        
+        # Set random orientation (keep roll and pitch the same, only vary yaw)
+        q = disengage_pose.pose.orientation
+        current_euler = tf.transformations.euler_from_quaternion([q.x, q.y, q.z, q.w], 'szxy')
+        new_yaw = current_euler[0] - random_yaw
+        setOrientation = tf.transformations.quaternion_from_euler(new_yaw, current_euler[1], current_euler[2], 'szxy')
+        random_pose.pose.orientation.x = setOrientation[0]
+        random_pose.pose.orientation.y = setOrientation[1]
+        random_pose.pose.orientation.z = setOrientation[2]
+        random_pose.pose.orientation.w = setOrientation[3]
+        
+        # Validate pose if rtde_help is provided
+        if rtde_help is not None:
+            if rtde_help.validatePose(random_pose):
+                print(f"      Generated valid pose after {attempt + 1} attempt(s)")
+                return random_pose, random_yaw
+            else:
+                if attempt < max_attempts - 1:
+                    print(f"      Generated pose {attempt + 1} failed validation (joint/pose limits), trying again...")
+                    continue
+        else:
+            # No validation, return first generated pose
+            return random_pose, random_yaw
     
-    # Generate random angle (0 to 2π)
-    angle = np.random.uniform(0, 2 * np.pi)
-    
-    # Calculate random offset
-    x_offset = distance * np.cos(angle)
-    y_offset = distance * np.sin(angle)
-    
-    # Generate random yaw for orientation
-    random_yaw = np.random.uniform(0, 2 * np.pi)
-    
-    # Create new pose
-    random_pose = copy.deepcopy(disengage_pose)
-    random_pose.pose.position.x += x_offset
-    random_pose.pose.position.y += y_offset
-    
-    # Set random orientation
-    q = disengage_pose.pose.orientation
-    current_euler = tf.transformations.euler_from_quaternion([q.x, q.y, q.z, q.w], 'szxy')
-    new_yaw = current_euler[0] - random_yaw
-    setOrientation = tf.transformations.quaternion_from_euler(new_yaw, current_euler[1], current_euler[2], 'szxy')
-    random_pose.pose.orientation.x = setOrientation[0]
-    random_pose.pose.orientation.y = setOrientation[1]
-    random_pose.pose.orientation.z = setOrientation[2]
-    random_pose.pose.orientation.w = setOrientation[3]
-    
+    # If all attempts failed and validation was enabled, return the last generated pose with warning
+    if rtde_help is not None:
+        print(f"      Warning: Could not generate valid pose after {max_attempts} attempts, using last generated pose")
     return random_pose, random_yaw
 
 
-def check_polygon_boundary(current_pose, polygon_disengage_pose, boundary_limit=3e-2):
+def check_polygon_boundary(current_pose, polygon_disengage_pose, boundary_limit=2.5e-2):
     """
     Check if the current pose has moved beyond the boundary limit from the polygon disengage pose.
     
@@ -572,11 +613,10 @@ def check_polygon_boundary(current_pose, polygon_disengage_pose, boundary_limit=
 
 
 def validate_trial_start(rtde_help, P_help, search_help, targetPWM_Pub, dataLoggerEnable, 
-                        initial_pose, max_validation_attempts=5):
+                        initial_pose):
     """
     Validate that the initial position doesn't immediately achieve suction and has sufficient pressure gradient.
-    If suction is achieved immediately OR there's no pressure gradient (all chambers < 15 Pa difference), 
-    generate a new random position.
+    This function validates a single pose - the outer loop handles generating new poses.
     
     Args:
         rtde_help: RTDE helper for robot control
@@ -585,75 +625,69 @@ def validate_trial_start(rtde_help, P_help, search_help, targetPWM_Pub, dataLogg
         targetPWM_Pub: ROS publisher for vacuum pump PWM control
         dataLoggerEnable: ROS service proxy for enabling/disabling data logging
         initial_pose: Initial pose to validate
-        max_validation_attempts: Maximum number of validation attempts
     
     Returns:
-        Tuple of (validated_pose, yaw_angle, validation_attempts)
+        Tuple of (validated_pose, validation_success)
     """
     P_vac = search_help.P_vac
     DUTYCYCLE_100 = 100
     DUTYCYCLE_0 = 0
-    PRESSURE_GRADIENT_THRESHOLD = 15  # Pa - minimum pressure difference between chambers
+    PRESSURE_GRADIENT_THRESHOLD = 20  # Pa - minimum pressure difference between chambers
     
-    for attempt in range(max_validation_attempts):
-        # Move to the initial pose
-        rtde_help.goToPose_2Dhaptic(initial_pose)
-        rospy.sleep(0.5)  # Allow robot to settle
-        
-        # Start vacuum and data logging
-        targetPWM_Pub.publish(DUTYCYCLE_100)
-        P_help.startSampling()
-        rospy.sleep(0.5)
-        P_help.setNowAsOffset()
-        dataLoggerEnable(True)
-        
-        # Move down to engage position (5mm below disengage) to check pressure properly
-        engage_position = copy.deepcopy(initial_pose.pose.position)
-        engage_position.z = engage_position.z - 5e-3
-        engage_pose = rtde_help.getPoseObj(engage_position, initial_pose.pose.orientation)
-        rtde_help.goToPose_2Dhaptic(engage_pose)
-        rospy.sleep(0.5)  # Allow pressure to stabilize
-        
-        # Check pressure conditions at engage position
-        P_array = P_help.four_pressure
-        reached_vacuum = all(np.array(P_array) < P_vac)
-        
-        # Check for null gradient (all chambers have similar pressure - less than 15 Pa difference)
-        pressure_range = max(P_array) - min(P_array)
-        has_null_gradient = pressure_range < PRESSURE_GRADIENT_THRESHOLD
-        
-        # Move back to disengage position
-        rtde_help.goToPose_2Dhaptic(initial_pose)
-        rospy.sleep(0.2)
-        
-        # Stop vacuum and data logging
-        dataLoggerEnable(False)
-        P_help.stopSampling()
-        targetPWM_Pub.publish(DUTYCYCLE_0)
-        
-        if not reached_vacuum and not has_null_gradient:
-            # Valid starting position - no immediate suction and sufficient pressure gradient
-            if attempt > 0:  # Only print if it took multiple attempts
-                print(f"  Validation successful after {attempt + 1} attempts")
-            return initial_pose, attempt + 1
-        else:
-            # Invalid starting position - either immediate suction or null gradient
-            if reached_vacuum:
-                print(f"  Validation attempt {attempt + 1}: Immediate suction detected")
-            elif has_null_gradient:
-                print(f"  Validation attempt {attempt + 1}: Null gradient detected (range: {pressure_range:.1f} Pa < {PRESSURE_GRADIENT_THRESHOLD} Pa)")
-            
-            # Continue to next attempt if not the last one
-            if attempt < max_validation_attempts - 1:
-                continue
-            else:
-                # Last attempt failed - return None to indicate validation failed
-                print(f"  Validation failed after {max_validation_attempts} attempts")
-                return None, max_validation_attempts
+    # Move to the initial pose
+    rtde_help.goToPose_2Dhaptic(initial_pose)
+    rospy.sleep(0.5)  # Allow robot to settle
     
-    # If all attempts failed, return the last generated pose
-    print(f"  Warning: Could not find valid starting position after {max_validation_attempts} attempts")
-    return initial_pose, max_validation_attempts
+    # Start vacuum and data logging
+    targetPWM_Pub.publish(DUTYCYCLE_100)
+    P_help.startSampling()
+    rospy.sleep(0.5)
+    P_help.setNowAsOffset()
+    dataLoggerEnable(True)
+    
+    # Move down to engage position (5mm below disengage) to check pressure properly
+    engage_position = copy.deepcopy(initial_pose.pose.position)
+    engage_position.z = engage_position.z - 5e-3
+    engage_pose = rtde_help.getPoseObj(engage_position, initial_pose.pose.orientation)
+    rtde_help.goToPose_2Dhaptic(engage_pose)
+    rospy.sleep(0.5)  # Allow pressure to stabilize
+    
+    # Check pressure conditions at engage position
+    P_array = P_help.four_pressure
+    
+    # Apply same pressure processing as controllers for consistent null gradient detection
+    P_processed = process_pressure_data(P_array, search_help)
+    
+    reached_vacuum = all(np.array(P_array) < P_vac)
+    
+    # Check for null gradient using processed pressure data (same as controllers)
+    pressure_range = max(P_processed) - min(P_processed)
+    has_null_gradient = pressure_range < PRESSURE_GRADIENT_THRESHOLD
+    
+    # Move back to disengage position
+    rtde_help.goToPose_2Dhaptic(initial_pose)
+    rospy.sleep(0.2)
+    
+    # Stop vacuum and data logging
+    dataLoggerEnable(False)
+    P_help.stopSampling()
+    targetPWM_Pub.publish(DUTYCYCLE_0)
+    
+    if not reached_vacuum and not has_null_gradient:
+        # Valid starting position - no immediate suction and sufficient pressure gradient
+        print(f"  Validation successful")
+        return initial_pose, True
+    else:
+        # Invalid starting position - either immediate suction or null gradient
+        if reached_vacuum:
+            print(f"  Validation failed: Immediate suction detected")
+            #turn off vacuum
+            targetPWM_Pub.publish(DUTYCYCLE_0)
+        elif has_null_gradient:
+            print(f"  Validation failed: Null gradient detected (range: {pressure_range:.1f} Pa < {PRESSURE_GRADIENT_THRESHOLD} Pa)")
+            #turn off vacuum
+            targetPWM_Pub.publish(DUTYCYCLE_0)
+        return None, False
 
 
 def test_polygon_position(args, rtde_help, polygon_row, polygon_col):
@@ -778,6 +812,8 @@ def run_single_polygon_experiment(args, rtde_help, search_help, P_help, targetPW
         'polygon_row': polygon_row,
         'polygon_col': polygon_col,
         'controller': controller_name,
+        'chamber_count': args.ch,
+        'random_seed': args.seed,
         'trials': [],
         'successful_trials': 0,
         'failed_trials': 0,
@@ -793,20 +829,26 @@ def run_single_polygon_experiment(args, rtde_help, search_help, P_help, targetPW
     for trial_num in range(1, num_trials + 1):
         print(f"  Trial {trial_num}/{num_trials}")
         
-        # Generate random initial pose based on polygon default position
-        random_pose, random_yaw = generate_random_initial_pose(polygon_disengage_pose)
-        
-        # Store initial yaw for reverse rotation calculation
-        initial_yaw = convert_yawAngle(search_help.get_yawRotation_from_T(search_help.get_Tmat_from_Pose(random_pose)))
-        
         # Validation loop - keep trying until we get a valid starting position
         validation_successful = False
         validation_attempts = 0
-        max_validation_attempts = 5
+        max_validation_attempts = 10
         
         while not validation_successful and validation_attempts < max_validation_attempts:
             validation_attempts += 1
             print(f"    Validation attempt {validation_attempts}/{max_validation_attempts} for trial {trial_num}...")
+            
+            # Always start from polygon's initial pose for each new attempt
+            print(f"      Moving to polygon initial pose...")
+            rtde_help.goToPose_2Dhaptic(polygon_disengage_pose)
+            rospy.sleep(0.5)  # Allow robot to settle at polygon initial pose
+            
+            # Generate NEW random pose for this validation attempt (with joint/pose limit validation)
+            print(f"      Generating new random pose...")
+            random_pose, random_yaw = generate_random_initial_pose(polygon_disengage_pose, rtde_help=rtde_help)
+            
+            # Store initial yaw for reverse rotation calculation
+            initial_yaw = convert_yawAngle(search_help.get_yawRotation_from_T(search_help.get_Tmat_from_Pose(random_pose)))
             
             # Move to higher position before going to random pose
             current_pose = rtde_help.getCurrentPose()
@@ -816,30 +858,24 @@ def run_single_polygon_experiment(args, rtde_help, search_help, P_help, targetPW
             rospy.sleep(0.3)  # Brief pause at higher position
             
             # Move to random pose (elevated)
+            print(f"      Moving to new random pose...")
             random_pose_elevated = copy.deepcopy(random_pose)
             random_pose_elevated.pose.position.z = high_pose.pose.position.z  # Keep elevated
             rtde_help.goToPose_2Dhaptic(random_pose_elevated)
             rospy.sleep(0.5)
             
             # Lower to random pose and validate trial start (ensure no immediate suction)
-            validated_pose, validation_attempts_inner = validate_trial_start(
+            validated_pose, validation_success = validate_trial_start(
                 rtde_help, P_help, search_help, targetPWM_Pub, dataLoggerEnable, random_pose
             )
             
-            if validated_pose is not None:
+            if validation_success:
                 # Validation successful
                 validation_successful = True
                 print(f"      Validation successful after {validation_attempts} attempts")
             else:
-                # Validation failed - return to polygon default position and generate new random pose
-                print(f"      Validation failed, returning to polygon default position...")
-                rtde_help.goToPose_2Dhaptic(polygon_disengage_pose)
-                rospy.sleep(0.5)  # Allow robot to settle at default position
-                
-                print(f"      Generating new random pose...")
-                random_pose, random_yaw = generate_random_initial_pose(polygon_disengage_pose)
-                # Update initial_yaw for the new random pose
-                initial_yaw = convert_yawAngle(search_help.get_yawRotation_from_T(search_help.get_Tmat_from_Pose(random_pose)))
+                # Validation failed - will try new random pose in next iteration
+                print(f"      Validation failed, will try new random pose in next attempt...")
         
         if not validation_successful:
             print(f"    Warning: Could not find valid starting position after {max_validation_attempts} attempts, using last generated pose")
@@ -890,6 +926,8 @@ def run_single_polygon_experiment(args, rtde_help, search_help, P_help, targetPW
         # Store trial result
         trial_result = {
             'trial_num': trial_num,
+            'chamber_count': args.ch,
+            'random_seed': args.seed,
             'success': result['success'],
             'iterations': result['iterations'],
             'elapsed_time': result['elapsed_time'],
@@ -914,7 +952,7 @@ def run_single_polygon_experiment(args, rtde_help, search_help, P_help, targetPW
         print(f"    Trial {trial_num} result: {'SUCCESS' if result['success'] else 'FAILED'} - Current polygon success rate: {current_success_rate:.1f}% ({polygon_results['successful_trials']}/{polygon_results['total_trials']})")
         
         # Save individual trial data
-        trial_filename = f"polygon_{polygon_row}_{polygon_col}_trial_{trial_num:02d}_{controller_name}.json"
+        trial_filename = f"polygon_{polygon_row}_{polygon_col}_trial_{trial_num:02d}_{controller_name}_ch{args.ch}.json"
         trial_path = os.path.join(file_help.ResultSavingDirectory, trial_filename)
         
         with open(trial_path, 'w') as f:
@@ -940,7 +978,7 @@ def run_single_polygon_experiment(args, rtde_help, search_help, P_help, targetPW
         polygon_results['avg_elapsed_time'] = np.mean([t['elapsed_time'] for t in successful_trials])
     
     # Save polygon summary
-    polygon_summary_filename = f"polygon_{polygon_row}_{polygon_col}_summary_{controller_name}.json"
+    polygon_summary_filename = f"polygon_{polygon_row}_{polygon_col}_summary_{controller_name}_ch{args.ch}.json"
     polygon_summary_path = os.path.join(file_help.ResultSavingDirectory, polygon_summary_filename)
     
     with open(polygon_summary_path, 'w') as f:
@@ -1103,7 +1141,8 @@ def run_polygon_grid_experiment(args, rtde_help, search_help, P_help, targetPWM_
     date_folder = datetime.now().strftime("%y%m%d")
     time_folder = datetime.now().strftime("%H%M%S")
     base_folder = os.path.expanduser('~') + '/SuctionExperiment'
-    main_experiment_folder = os.path.join(base_folder, date_folder, f"polygon_grid_experiment_{time_folder}")
+    seed_suffix = f"_seed{args.seed}" if args.seed is not None else "_seedNone"
+    main_experiment_folder = os.path.join(base_folder, date_folder, f"polygon_grid_experiment_ch{args.ch}{seed_suffix}_{time_folder}")
     
     if not os.path.exists(main_experiment_folder):
         os.makedirs(main_experiment_folder)
@@ -1130,7 +1169,7 @@ def run_polygon_grid_experiment(args, rtde_help, search_help, P_help, targetPWM_
         print(f"\n{'='*20} CONTROLLER {controller_idx}/{len(controllers)}: {controller_name.upper()} {'='*20}")
         
         # Create controller-specific subdirectory
-        controller_subfolder = os.path.join(main_experiment_folder, f"controller_{controller_name}")
+        controller_subfolder = os.path.join(main_experiment_folder, f"controller_{controller_name}_ch{args.ch}")
         if not os.path.exists(controller_subfolder):
             os.makedirs(controller_subfolder)
         
@@ -1142,6 +1181,8 @@ def run_polygon_grid_experiment(args, rtde_help, search_help, P_help, targetPWM_
         # Store results for this controller
         controller_results = {
             'controller': controller_name,
+            'chamber_count': args.ch,
+            'random_seed': args.seed,
             'polygons': {},
             'overall_stats': {}
         }
@@ -1237,7 +1278,7 @@ def run_polygon_grid_experiment(args, rtde_help, search_help, P_help, targetPWM_
         }
         
         # Save controller summary
-        controller_summary_filename = f"controller_{controller_name}_summary.json"
+        controller_summary_filename = f"controller_{controller_name}_summary_ch{args.ch}.json"
         controller_summary_path = os.path.join(controller_file_help.ResultSavingDirectory, controller_summary_filename)
         
         with open(controller_summary_path, 'w') as f:
@@ -1287,17 +1328,18 @@ def main(args):
     """
     Main function to setup and execute polygon grid experiments.
     """
-    # Initialize random seed if provided
-    if args.seed is not None:
-        np.random.seed(args.seed)
-        print(f"Random seed set to: {args.seed}")
+    # Determine seeds to run
+    if args.seeds is not None:
+        seeds_to_run = args.seeds
+        print(f"Running experiments for seeds: {seeds_to_run}")
     else:
+        seeds_to_run = [None]  # Single run with random seed
         print("Using random seed (not reproducible)")
     
     # Initialize ROS node
     rospy.init_node('polygon_grid_experiment')
     
-    # Setup helper functions
+    # Setup helper functions (done once for all seeds)
     FT_help = FT_CallbackHelp()
     rospy.sleep(0.5)
     P_help = P_CallbackHelp()
@@ -1305,7 +1347,7 @@ def main(args):
     rtde_help = rtdeHelp(125)
     rospy.sleep(0.5)
     file_help = fileSaveHelp()
-    search_help = hapticSearch2DHelp(P_vac=-18000, d_lat=1.0e-3, d_yaw=1.5, damping_factor=0.7, n_ch=args.ch, p_reverse=args.reverse)
+    search_help = hapticSearch2DHelp(P_vac=-20000, d_lat=1.0e-3, d_yaw=1.5, damping_factor=0.7, n_ch=args.ch, p_reverse=args.reverse)
     
     # Set TCP offset
     rospy.sleep(0.5)
@@ -1333,17 +1375,43 @@ def main(args):
         input("Press <Enter> to start polygon experiment")
         
         if args.initial_contact_mode:
-            # Run visual test mode
+            # Run visual test mode (only once, doesn't use seeds)
             print("Running visual test mode...")
             run_polygon_visual_test(args, rtde_help)
             print("Polygon visual test completed successfully!")
         else:
-            # Run polygon grid experiment
-            results = run_polygon_grid_experiment(
-                args, rtde_help, search_help, P_help, targetPWM_Pub,
-                dataLoggerEnable, file_help, None, args.controllers
-            )
-            print("Polygon grid experiment completed successfully!")
+            # Run polygon grid experiment for each seed
+            all_results = []
+            for i, seed in enumerate(seeds_to_run):
+                print(f"\n{'='*60}")
+                print(f"RUNNING EXPERIMENT {i+1}/{len(seeds_to_run)}")
+                if seed is not None:
+                    print(f"Seed: {seed}")
+                    np.random.seed(seed)
+                else:
+                    print("Using random seed")
+                print(f"{'='*60}")
+                
+                # Create a copy of args with the current seed
+                current_args = copy.deepcopy(args)
+                current_args.seed = seed
+                
+                # Run experiment for this seed
+                results = run_polygon_grid_experiment(
+                    current_args, rtde_help, search_help, P_help, targetPWM_Pub,
+                    dataLoggerEnable, file_help, None, args.controllers
+                )
+                all_results.append(results)
+                
+                print(f"Completed experiment {i+1}/{len(seeds_to_run)}")
+                if i < len(seeds_to_run) - 1:
+                    print("Waiting before next experiment...")
+                    rospy.sleep(2)  # Brief pause between experiments
+            
+            print(f"\n{'='*60}")
+            print(f"ALL EXPERIMENTS COMPLETED!")
+            print(f"Total experiments run: {len(seeds_to_run)}")
+            print(f"{'='*60}")
         
     except rospy.ROSInterruptException:
         targetPWM_Pub.publish(0)
@@ -1369,8 +1437,9 @@ if __name__ == '__main__':
                       default=0.2)
     parser.add_argument('--hop_sleep', type=float, help='sleep time after hopping down in seconds (default: 0.08s, try 0.05s for faster)', 
                       default=0.15)
-    parser.add_argument('--seed', type=int, help='random seed for reproducible experiments (default: None for random)', 
+    parser.add_argument('--seeds', nargs='+', type=int, help='random seeds for reproducible experiments (e.g., --seeds 42 43 44). If not provided, uses random seed.', 
                       default=None)
+    parser.add_argument('--difficulty', action='store_true', help='difficulty mode: use difficulty power settings')
     
     args = parser.parse_args()
     
