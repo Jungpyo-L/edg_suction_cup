@@ -1,4 +1,2 @@
 /SensorPacket
-/pwm
 /endEffectorPose
-/sync

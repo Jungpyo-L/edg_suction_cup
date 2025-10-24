@@ -37,7 +37,15 @@ class hapticSearch2DHelp(object):
         self.d_lat_momentum = self.d_lat * 0.3 # initial step size for momentum controller
         self.damping_factor = damping_factor
         self.max_velocity_x = self.d_lat * 1.5
+        
+        # for yaw rotation tracking and limiting
+        self.cumulative_yaw_deg = 0.0  # Track total yaw rotation
+        self.max_cumulative_yaw_deg = 45.0  # Maximum allowed cumulative yaw
         self.max_velocity_y = self.d_lat * 1.5
+    
+    def reset_yaw_tracking(self):
+        """Reset cumulative yaw tracking for new experiment."""
+        self.cumulative_yaw_deg = 0.0
     
     def get_yawRotation_from_T(self, T):
         R = T[0:3,0:3]
@@ -193,6 +201,33 @@ class hapticSearch2DHelp(object):
         rot_axis = np.array([0,0,-1])
         omega_hat = hat(rot_axis)
         Rw = scipy.linalg.expm(d_yaw * omega_hat)   
+        return create_transform_matrix(Rw, [0,0,0])
+    
+    def get_Tmat_yawRotation_limited(self, current_yaw_deg, max_yaw_deg=45.0):
+        """
+        Get yaw rotation with cumulative limit to prevent joint limit violations.
+        
+        Args:
+            current_yaw_deg: Current yaw angle in degrees
+            max_yaw_deg: Maximum allowed yaw angle from initial position
+            
+        Returns:
+            Transform matrix for yaw rotation (limited)
+        """
+        # Calculate remaining yaw capacity
+        remaining_yaw = max_yaw_deg - abs(current_yaw_deg)
+        
+        if remaining_yaw <= 0:
+            # Already at or beyond limit, no rotation
+            return np.eye(4)
+        
+        # Limit the yaw step to remaining capacity
+        d_yaw_limited = min(self.d_yaw, remaining_yaw) * np.pi/180
+        
+        # Apply rotation
+        rot_axis = np.array([0,0,-1])
+        omega_hat = hat(rot_axis)
+        Rw = scipy.linalg.expm(d_yaw_limited * omega_hat)   
         return create_transform_matrix(Rw, [0,0,0])
         
     def get_Tmats_from_controller(self, P_array, controller_str):

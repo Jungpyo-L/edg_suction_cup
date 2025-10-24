@@ -10,6 +10,8 @@ except:
 from grp import getgrall
 from hmac import trans_36
 import numpy as np
+import copy
+import tf.transformations
 from geometry_msgs.msg import PoseStamped
 
 from helperFunction.adaptiveMotion import adaptMotionHelp
@@ -174,6 +176,58 @@ class rtdeHelp(object):
         except Exception as e:
             print(f"Pose validation error: {e}")
             return False
+    
+    def _findSafePose(self, goal_pose, max_attempts=5):
+        """
+        Try to find a safe pose by reducing yaw rotation if the original pose hits joint limits.
+        
+        Args:
+            goal_pose: Original goal pose that failed validation
+            max_attempts: Maximum number of attempts to find safe pose
+            
+        Returns:
+            Safe pose or None if no safe pose found
+        """
+        try:
+            # Get current pose as fallback
+            current_pose = self.getCurrentPose()
+            
+            # Try reducing yaw rotation progressively
+            for attempt in range(max_attempts):
+                # Create a modified pose with reduced yaw
+                safe_pose = copy.deepcopy(goal_pose)
+                
+                # Get current orientation
+                q = safe_pose.pose.orientation
+                current_euler = tf.transformations.euler_from_quaternion([q.x, q.y, q.z, q.w], 'szxy')
+                
+                # Reduce yaw rotation by 50% each attempt
+                yaw_reduction = 0.5 ** (attempt + 1)
+                new_yaw = current_euler[0] * yaw_reduction
+                
+                # Set new orientation
+                setOrientation = tf.transformations.quaternion_from_euler(
+                    new_yaw, current_euler[1], current_euler[2], 'szxy'
+                )
+                safe_pose.pose.orientation.x = setOrientation[0]
+                safe_pose.pose.orientation.y = setOrientation[1]
+                safe_pose.pose.orientation.z = setOrientation[2]
+                safe_pose.pose.orientation.w = setOrientation[3]
+                
+                # Validate the modified pose
+                if self.validatePose(safe_pose):
+                    print(f"Found safe pose with {yaw_reduction*100:.1f}% of original yaw rotation")
+                    return safe_pose
+            
+            # If all attempts failed, try current pose
+            if self.validatePose(current_pose):
+                print(f"Using current pose as safe fallback")
+                return current_pose
+                
+        except Exception as e:
+            print(f"Error finding safe pose: {e}")
+        
+        return None
     
     def speedl(self, goalPose,speed=0.5, acc=0.5, time=0.5, aRot='a'):
 
