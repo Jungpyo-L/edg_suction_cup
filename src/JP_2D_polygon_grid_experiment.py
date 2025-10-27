@@ -74,7 +74,7 @@ def get_disEngagePosition(primitives):
         List of [x, y, z] coordinates in meters for the disengage position
     """
     if primitives == 'polygons':
-        disEngagePosition = [0.465, -.190, 0.013+0.0015]  # Base position for polygon (0,0)
+        disEngagePosition = [0.465, -.190, 0.013 +0.0015]  # Base position for polygon (0,0)
     else:
         # Default fallback for unknown primitives
         print(f"Warning: Unknown primitives '{primitives}', using polygon position")
@@ -493,30 +493,6 @@ def run_haptic_search_loop(args, rtde_help, search_help, P_help, targetPWM_Pub,
         currPose.pose.orientation.z = compensated_quat[2]
         currPose.pose.orientation.w = compensated_quat[3]
         
-        # ===== SAFETY CHECK: Validate poses before execution =====
-        # Check hop up pose
-        hop_up_pose = copy.deepcopy(currPose)
-        hop_up_pose.pose.position.z = currPose.pose.position.z + 5e-3
-        
-        # Check hop down pose
-        hop_down_pose = copy.deepcopy(currPose)
-        hop_down_pose.pose.position.z = currPose.pose.position.z - 5e-3 - pose_diff
-        
-        # If either pose would violate joint limits, abandon this trial
-        if not check_pose_safety(rtde_help, hop_up_pose) or not check_pose_safety(rtde_help, hop_down_pose):
-            print(f"Trial abandoned at iteration {iteration_count}: Joint limit violation detected")
-            # Return failure result to trigger new random pose generation
-            return {
-                'success': False,
-                'iterations': iteration_count,
-                'elapsed_time': time.time() - startTime,
-                'final_yaw': args.final_yaw if hasattr(args, 'final_yaw') else 0,
-                'path_length_2d': path_length_2d,
-                'path_length_3d': path_length_3d,
-                'boundary_exceeded': False,
-                'joint_limit_violation': True  # Flag to indicate why trial failed
-            }
-        
         # HOP UP: Lift 5mm to disengage from surface
         currPose.pose.position.z = currPose.pose.position.z + 5e-3
         rtde_help.goToPose_2Dhaptic(currPose)
@@ -686,8 +662,8 @@ def generate_random_initial_pose(disengage_pose, min_distance=1.0e-2, max_distan
         x_offset = distance * np.cos(angle)
         y_offset = distance * np.sin(angle)
         
-        # Generate random yaw for orientation (reduced range to avoid extreme orientations)
-        random_yaw = np.random.uniform(-120*np.pi/180, 120*np.pi/180)  # ±150° instead of ±45°
+        # Generate random yaw for orientation (-150° to +150° to avoid extreme joint angles)
+        random_yaw = np.random.uniform(-150*np.pi/180, 150*np.pi/180)
         
         # Create new pose
         random_pose = copy.deepcopy(disengage_pose)
@@ -695,10 +671,9 @@ def generate_random_initial_pose(disengage_pose, min_distance=1.0e-2, max_distan
         random_pose.pose.position.y += y_offset
         
         # Set random orientation (keep roll and pitch the same, only vary yaw)
-        # Use the disengage_pose orientation as base, not current robot orientation
         q = disengage_pose.pose.orientation
         current_euler = tf.transformations.euler_from_quaternion([q.x, q.y, q.z, q.w], 'szxy')
-        new_yaw = current_euler[0] + random_yaw  # ADD random yaw, don't subtract
+        new_yaw = current_euler[0] - random_yaw  # Subtract to add random variation to base orientation
         setOrientation = tf.transformations.quaternion_from_euler(new_yaw, current_euler[1], current_euler[2], 'szxy')
         random_pose.pose.orientation.x = setOrientation[0]
         random_pose.pose.orientation.y = setOrientation[1]
@@ -968,6 +943,10 @@ def run_single_polygon_experiment(args, rtde_help, search_help, P_help, targetPW
         'avg_elapsed_time': 0.0
     }
     
+    # Variable to store the last trial's random pose (for transition after last polygon)
+    last_trial_random_pose = None
+    last_trial_random_yaw = None
+    
     # Run trials
     for trial_num in range(1, num_trials + 1):
         print(f"  Trial {trial_num}/{num_trials}")
@@ -1098,34 +1077,37 @@ def run_single_polygon_experiment(args, rtde_help, search_help, P_help, targetPW
             else:
                 print(f"    Warning: New random pose also failed validation, using original result")
         
-        # Return to polygon default position after each trial (except for the last trial)
-        if trial_num < num_trials:
-            # Step 1: Move to higher position first
-            current_pose = rtde_help.getCurrentPose()
-            high_pose = copy.deepcopy(current_pose)
-            high_pose.pose.position.z = current_pose.pose.position.z + 5e-3  # 5mm higher
-            rtde_help.goToPose_2Dhaptic(high_pose)
-            rospy.sleep(0.3)
-            
-            # Step 2: Move to random pose (with current orientation from haptic search) - elevated
-            random_pose_with_current_orientation = copy.deepcopy(random_pose)
-            # Keep the current orientation from haptic search
-            current_orientation = current_pose.pose.orientation
-            random_pose_with_current_orientation.pose.orientation = current_orientation
-            # Keep elevated position (5mm above contact)
-            random_pose_with_current_orientation.pose.position.z = high_pose.pose.position.z
-            rtde_help.goToPose_2Dhaptic(random_pose_with_current_orientation)
-            rospy.sleep(0.5)
-            
-            # Step 3: Move to default pose (with original random orientation) - elevated
-            default_pose_elevated = copy.deepcopy(polygon_disengage_pose)
-            default_pose_elevated.pose.position.z = high_pose.pose.position.z  # Keep elevated
-            rtde_help.goToPose_2Dhaptic(default_pose_elevated)
-            rospy.sleep(0.5)
-            
-            # Step 4: Lower to default position for next trial
-            rtde_help.goToPose_2Dhaptic(polygon_disengage_pose)
-            rospy.sleep(0.5)  # Allow robot to settle at default position
+        # Return to polygon default position after each trial
+        # For trials 1-9: return prepares for next trial
+        # For trial 10: return prepares for transition to next polygon
+        # Step 1: Move to higher position first
+        current_pose = rtde_help.getCurrentPose()
+        high_pose = copy.deepcopy(current_pose)
+        high_pose.pose.position.z = current_pose.pose.position.z + 5e-3  # 5mm higher
+        rtde_help.goToPose_2Dhaptic(high_pose)
+        rospy.sleep(0.3)
+        
+        # Step 2: Move to random pose (with current orientation from haptic search) - elevated
+        random_pose_with_current_orientation = copy.deepcopy(random_pose)
+        # Keep the current orientation from haptic search
+        current_orientation = current_pose.pose.orientation
+        random_pose_with_current_orientation.pose.orientation = current_orientation
+        # Keep elevated position (5mm above contact)
+        random_pose_with_current_orientation.pose.position.z = high_pose.pose.position.z
+        rtde_help.goToPose_2Dhaptic(random_pose_with_current_orientation)
+        rospy.sleep(0.5)
+        
+        # Step 3: Move to default pose (with original random orientation) - elevated
+        default_pose_elevated = copy.deepcopy(polygon_disengage_pose)
+        default_pose_elevated.pose.position.z = high_pose.pose.position.z  # Keep elevated
+        rtde_help.goToPose_2Dhaptic(default_pose_elevated)
+        rospy.sleep(0.5)
+        
+        # Step 4: Lower to default position
+        # For trials 1-9: prepares for next trial
+        # For trial 10: prepares for transition to next polygon
+        rtde_help.goToPose_2Dhaptic(polygon_disengage_pose)
+        rospy.sleep(0.5)  # Allow robot to settle at default position
         
         # Boundary checking is now handled during haptic search
         
@@ -1148,6 +1130,10 @@ def run_single_polygon_experiment(args, rtde_help, search_help, P_help, targetPW
         polygon_results['trials'].append(trial_result)
         polygon_results['total_trials'] += 1
         
+        # Save random pose for this trial (for potential use in transition after last polygon)
+        last_trial_random_pose = random_pose
+        last_trial_random_yaw = random_yaw
+        
         if result['success']:
             polygon_results['successful_trials'] += 1
         else:
@@ -1164,10 +1150,6 @@ def run_single_polygon_experiment(args, rtde_help, search_help, P_help, targetPW
         with open(trial_path, 'w') as f:
             import json
             json.dump(trial_result, f, indent=2, default=str)
-        
-        # Brief pause between trials
-        if trial_num < num_trials:
-            rospy.sleep(0.2)  # Fixed pause time
     
     # Calculate summary statistics for this polygon
     successful_trials = [t for t in polygon_results['trials'] if t['success']]
@@ -1193,7 +1175,8 @@ def run_single_polygon_experiment(args, rtde_help, search_help, P_help, targetPW
     
     print(f"  Polygon ({polygon_row},{polygon_col}) completed: {polygon_results['successful_trials']}/{polygon_results['total_trials']} successful ({polygon_results['success_rate']:.1f}%), {polygon_results['boundary_failures']} boundary failures ({polygon_results['boundary_failure_rate']:.1f}%)")
     
-    return polygon_results
+    # Return polygon results along with last trial's random pose for transition
+    return polygon_results, last_trial_random_pose, last_trial_random_yaw
 
 
 def run_polygon_visual_test(args, rtde_help):
@@ -1411,7 +1394,7 @@ def run_polygon_grid_experiment(args, rtde_help, search_help, P_help, targetPWM_
                 print(f"\n--- Testing {polygon_key} (polygon {polygon_num}) ---")
                 
                 # Run experiments on this polygon
-                polygon_result = run_single_polygon_experiment(
+                polygon_result, last_random_pose, last_random_yaw = run_single_polygon_experiment(
                     args, rtde_help, search_help, P_help, targetPWM_Pub,
                     dataLoggerEnable, controller_file_help, rl_controllers,
                     row, col, controller_name, num_trials=trials_per_polygon
@@ -1450,37 +1433,44 @@ def run_polygon_grid_experiment(args, rtde_help, search_help, P_help, targetPWM_
                     rtde_help.goToPose_2Dhaptic(high_pose)
                     rospy.sleep(0.5)
                     
-                    # Step 1: Go to random pose (elevated) - similar to between trials
-                    print(f"  Moving to random pose (elevated)...")
-                    base_disengage_position = get_disEngagePosition('polygons')
-                    polygon_12_position = get_polygon_position(2, 3, base_disengage_position)  # Current polygon (2,3)
-                    polygon_12_disengage_pose = rtde_help.getPoseObj(polygon_12_position, 
-                        tf.transformations.quaternion_from_euler(pi/2 + 45*pi/180, pi, 0, 'szxy'))
-                    
-                    # Generate random pose for transition
-                    random_pose, random_yaw = generate_random_initial_pose(polygon_12_disengage_pose, rtde_help=rtde_help)
-                    random_pose_elevated = copy.deepcopy(random_pose)
+                    # Step 1: Go to last trial's random pose (elevated) - using the 10th trial's random pose
+                    print(f"  Moving to last trial's random pose (elevated)...")
+                    random_pose_elevated = copy.deepcopy(last_random_pose)
+                    # Keep the current orientation from haptic search
+                    current_orientation = current_pose.pose.orientation
+                    random_pose_elevated.pose.orientation = current_orientation
                     random_pose_elevated.pose.position.z = high_pose.pose.position.z  # Keep elevated
                     rtde_help.goToPose_2Dhaptic(random_pose_elevated)
                     rospy.sleep(0.5)
                     
                     # Step 2: Return to polygon (2,3) original pose (elevated)
                     print(f"  Returning to polygon (2,3) original pose (elevated)...")
+                    base_disengage_position = get_disEngagePosition('polygons')
+                    polygon_12_position = get_polygon_position(2, 3, base_disengage_position)
+                    setOrientation = tf.transformations.quaternion_from_euler(pi/2 + 45*pi/180, pi, 0, 'szxy')
+                    polygon_12_disengage_pose = rtde_help.getPoseObj(polygon_12_position, setOrientation)
                     polygon_12_elevated = copy.deepcopy(polygon_12_disengage_pose)
                     polygon_12_elevated.pose.position.z = high_pose.pose.position.z  # Keep elevated
                     rtde_help.goToPose_2Dhaptic(polygon_12_elevated)
                     rospy.sleep(0.5)
                     
-                    # Step 3: Move to polygon (0,0) for next controller
-                    print(f"  Moving to polygon (0,0) for next controller...")
+                    # Step 3: Move to polygon (0,0) elevated first
+                    print(f"  Moving to polygon (0,0) (elevated) for next controller...")
                     polygon_0_position = get_polygon_position(0, 0, base_disengage_position)
                     default_yaw = pi/2 + 45*pi/180
                     setOrientation = tf.transformations.quaternion_from_euler(default_yaw, pi, 0, 'szxy')
                     return_pose = rtde_help.getPoseObj(polygon_0_position, setOrientation)
+                    return_pose.pose.position.z = high_pose.pose.position.z  # Keep elevated
                     
                     print(f"  Position: X={polygon_0_position[0]*1000:.1f}mm, Y={polygon_0_position[1]*1000:.1f}mm, Z={polygon_0_position[2]*1000:.1f}mm")
                     rtde_help.goToPose_2Dhaptic(return_pose)
-                    rospy.sleep(1.0)
+                    rospy.sleep(0.5)
+                    
+                    # Step 4: Lower to polygon (0,0) initial pose
+                    print(f"  Lowering to polygon (0,0) initial pose...")
+                    polygon_0_initial_pose = rtde_help.getPoseObj(polygon_0_position, setOrientation)
+                    rtde_help.goToPose_2Dhaptic(polygon_0_initial_pose)
+                    rospy.sleep(0.5)
                     
                     print(f"  Ready for next controller at polygon (0,0)")
                     
